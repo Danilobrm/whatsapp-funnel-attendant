@@ -1,6 +1,5 @@
-import { DAY_KEYS, type DayInterval, type DayKey, type OpeningHours } from '../../../api/store';
-import DayHoursBar, { DayHoursBarSkeleton } from '../DayHoursBar';
-import { useT } from '../../../i18n/index.tsx';
+import type { OpeningHours } from '../../../api/store';
+import WeekHoursGrid, { WeekHoursGridSkeleton } from '../WeekHoursGrid';
 
 interface OpeningHoursEditorProps {
   value: OpeningHours;
@@ -10,42 +9,22 @@ interface OpeningHoursEditorProps {
 
 export function OpeningHoursEditorSkeleton() {
   return (
-    <div aria-busy="true" data-testid="opening-hours-skeleton" className="flex flex-col gap-4">
-      {[0, 1, 2, 3].map((i) => (
-        <DayHoursBarSkeleton key={i} />
-      ))}
+    <div aria-busy="true" data-testid="opening-hours-skeleton">
+      <WeekHoursGridSkeleton />
     </div>
   );
 }
 
+/**
+ * Casca fina: a grade semanal (`WeekHoursGrid`) já faz tudo. Existe como
+ * componente próprio pra manter o mesmo ponto de entrada que `Store.tsx` usa
+ * (`value`/`onChange`/`disabled`) caso o editor ganhe mais UI ao redor depois
+ * (aviso de fuso, atalho "copiar pra todos os dias" etc.).
+ */
 export default function OpeningHoursEditor({
   value,
   onChange,
   disabled = false,
 }: OpeningHoursEditorProps) {
-  const t = useT();
-
-  function setIntervals(day: DayKey, intervals: DayInterval[]) {
-    const next = { ...value };
-    if (intervals.length === 0) {
-      delete next[day];
-    } else {
-      next[day] = intervals;
-    }
-    onChange(next);
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      {DAY_KEYS.map((day) => (
-        <DayHoursBar
-          key={day}
-          dayLabel={t(`store.hours.days.${day}`)}
-          intervals={value[day] ?? []}
-          onChange={(intervals) => setIntervals(day, intervals)}
-          disabled={disabled}
-        />
-      ))}
-    </div>
-  );
+  return <WeekHoursGrid value={value} onChange={onChange} disabled={disabled} />;
 }
