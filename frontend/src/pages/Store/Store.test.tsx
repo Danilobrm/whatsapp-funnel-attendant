@@ -10,23 +10,16 @@ vi.mock('../../api/store', async (importOriginal) => {
     fetchStoreSettings: vi.fn(),
     fetchZones: vi.fn(),
     saveStoreSettings: vi.fn(),
-    createZone: vi.fn(),
   };
 });
 
-import {
-  createZone,
-  fetchStoreSettings,
-  fetchZones,
-  saveStoreSettings,
-} from '../../api/store';
+import { fetchStoreSettings, fetchZones, saveStoreSettings } from '../../api/store';
 
 import Store from './Store.tsx';
 
 const fetchSettingsMock = vi.mocked(fetchStoreSettings);
 const fetchZonesMock = vi.mocked(fetchZones);
 const saveSettingsMock = vi.mocked(saveStoreSettings);
-const createZoneMock = vi.mocked(createZone);
 
 const AUTOSAVE_WAIT = { timeout: 2500 };
 
@@ -43,16 +36,16 @@ const SETTINGS = {
   ownerWhatsapp: null,
 };
 
-const ZONES = [{ id: 1, neighborhood: 'Centro', feeCents: 500, active: true }];
-
 function renderPage() {
-  return renderWithProviders(<Store />);
+  return renderWithProviders(<Store />, { route: '/admin/store' });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   fetchSettingsMock.mockResolvedValue({ settings: structuredClone(SETTINGS) });
-  fetchZonesMock.mockResolvedValue({ zones: structuredClone(ZONES) });
+  // A página não busca zonas (isso ficou pra aba /admin/store/delivery), mas o
+  // mock evita rejeição não tratada caso algum outro código chame por engano.
+  fetchZonesMock.mockResolvedValue({ zones: [] });
 });
 
 describe('Store — loading', () => {
@@ -81,6 +74,13 @@ describe('Store — settings', () => {
     expect(screen.getByRole('checkbox', { name: 'Cartão na entrega' })).not.toBeChecked();
   });
 
+  it('does not fetch delivery zones on the general tab', async () => {
+    renderPage();
+    await screen.findByText('11:00–15:00');
+
+    expect(fetchZonesMock).not.toHaveBeenCalled();
+  });
+
   it('autosaves when the store is paused', async () => {
     saveSettingsMock.mockResolvedValue({
       settings: { ...SETTINGS, paused: true },
@@ -98,28 +98,20 @@ describe('Store — settings', () => {
       AUTOSAVE_WAIT,
     );
   });
+});
 
-  it('lists the delivery zones and adds a new one', async () => {
-    createZoneMock.mockResolvedValue({
-      zone: { id: 2, neighborhood: 'Moema', feeCents: 700, active: true },
-    });
+describe('Store — abas', () => {
+  it('mostra as abas Geral e Entrega, com Geral ativa', async () => {
     renderPage();
+    await screen.findByText('11:00–15:00');
 
-    expect(await screen.findByDisplayValue('Centro')).toBeInTheDocument();
-
-    await userEvent.type(
-      screen.getByPlaceholderText('Bairro (ex.: Centro)'),
-      'Moema',
+    expect(screen.getByRole('link', { name: 'Geral' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
-    await userEvent.type(screen.getByPlaceholderText('0,00'), '7,00');
-    await userEvent.click(screen.getByRole('button', { name: 'Adicionar' }));
-
-    await waitFor(() =>
-      expect(createZoneMock).toHaveBeenCalledWith({
-        neighborhood: 'Moema',
-        feeCents: 700,
-        active: true,
-      }),
+    expect(screen.getByRole('link', { name: 'Entrega' })).not.toHaveAttribute(
+      'aria-current',
+      'page',
     );
   });
 });

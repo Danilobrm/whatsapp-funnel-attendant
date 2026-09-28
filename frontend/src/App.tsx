@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import AdminLayout from './components/AdminLayout';
 import PublicLayout from './components/PublicLayout';
 import RequireAuth from './components/RequireAuth';
+import Delivery from './pages/Delivery';
 import Login from './pages/Login';
 import Menu from './pages/Menu';
 import Settings from './pages/Settings';
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="simulator" element={<Simulator />} />
           <Route path="menu" element={<Menu />} />
           <Route path="store" element={<Store />} />
+          <Route path="store/delivery" element={<Delivery />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Route>

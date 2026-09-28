@@ -246,8 +246,12 @@ const ptBR = {
   },
   store: {
     title: 'Loja',
-    subtitle: 'Horários, entrega, pagamento e zonas atendidas.',
+    subtitle: 'Horários, pagamento e status.',
     loadError: 'Não foi possível carregar as configurações da loja.',
+    tabs: {
+      general: 'Geral',
+      delivery: 'Entrega',
+    },
     errors: {
       generic: 'Não foi possível salvar. Tente novamente.',
       timezone_required: 'Informe um fuso horário válido.',
@@ -316,6 +320,10 @@ const ptBR = {
       newNeighborhoodPlaceholder: 'Bairro (ex.: Centro)',
       empty: 'Nenhuma zona cadastrada ainda.',
     },
+  },
+  delivery: {
+    title: 'Entrega',
+    subtitle: 'Retirada, entrega, pedido mínimo e zonas atendidas.',
   },
 } as const;
 

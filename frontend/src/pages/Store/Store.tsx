@@ -1,29 +1,14 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { Store as StoreIcon } from 'lucide-react';
 
-import {
-  createZone,
-  deleteZone,
-  fetchStoreSettings,
-  fetchZones,
-  saveStoreSettings,
-  StoreRejectedError,
-  updateZone,
-  type DeliveryZone,
-  type DeliveryZoneFormInput,
-  type PaymentMethod,
-  type StoreSettings,
-} from '../../api/store';
+import { type PaymentMethod } from '../../api/store';
 import OpeningHoursEditor, {
   OpeningHoursEditorSkeleton,
 } from '../../components/store/OpeningHoursEditor';
-import ZonesTable, { ZonesTableSkeleton } from '../../components/store/ZonesTable';
-import SyncStatus, {
-  type SyncStatusState,
-} from '../../components/settings/SyncStatus';
+import StoreTabs from '../../components/store/StoreTabs';
+import SyncStatus from '../../components/settings/SyncStatus';
+import { useStoreSettings } from '../../hooks/useStoreSettings';
 import { useT } from '../../i18n/index.tsx';
-
-const AUTOSAVE_DELAY_MS = 700;
 
 const PAYMENT_METHODS: PaymentMethod[] = ['pix', 'cash', 'card_on_delivery'];
 
@@ -45,146 +30,17 @@ function Card({ title, subtitle, children }: CardProps) {
   );
 }
 
-type SaveState =
-  | { status: 'idle' }
-  | { status: 'saving' }
-  | { status: 'saved' }
-  | { status: 'error'; code: string };
-
 export default function Store() {
   const t = useT();
-
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [saved, setSaved] = useState<StoreSettings | null>(null);
-  const [draft, setDraft] = useState<StoreSettings | null>(null);
-  const [save, setSave] = useState<SaveState>({ status: 'idle' });
-
-  const [zones, setZones] = useState<DeliveryZone[] | null>(null);
-  const [zonesError, setZonesError] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    Promise.all([fetchStoreSettings(), fetchZones()])
-      .then(([settingsRes, zonesRes]) => {
-        if (cancelled) return;
-        setSaved(settingsRes.settings);
-        setDraft(settingsRes.settings);
-        setZones(zonesRes.zones);
-      })
-      .catch(() => {
-        if (!cancelled) setLoadError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  function patch(next: Partial<StoreSettings>) {
-    setDraft((current) => (current ? { ...current, ...next } : current));
-  }
+  const { loading, loadError, draft, patch, syncState, saving, errorMessage } =
+    useStoreSettings();
 
   function togglePaymentMethod(method: PaymentMethod, enabled: boolean) {
-    setDraft((current) => {
-      if (!current) return current;
-      const paymentMethods = enabled
-        ? [...new Set([...current.paymentMethods, method])]
-        : current.paymentMethods.filter((m) => m !== method);
-      return { ...current, paymentMethods };
-    });
-  }
-
-  async function submit(next: StoreSettings) {
-    setSave({ status: 'saving' });
-    try {
-      const result = await saveStoreSettings({
-        timezone: next.timezone,
-        openingHours: next.openingHours,
-        paused: next.paused,
-        minOrderCents: next.minOrderCents,
-        estimatedMinutes: next.estimatedMinutes,
-        pickupEnabled: next.pickupEnabled,
-        deliveryEnabled: next.deliveryEnabled,
-        paymentMethods: next.paymentMethods,
-        pixKey: next.pixKey,
-        ownerWhatsapp: next.ownerWhatsapp,
-      });
-      setSaved(result.settings);
-      setDraft(result.settings);
-      setSave({ status: 'saved' });
-    } catch (err) {
-      setSave({
-        status: 'error',
-        code: err instanceof StoreRejectedError ? err.code : 'generic',
-      });
-    }
-  }
-
-  const dirty =
-    draft !== null && saved !== null && JSON.stringify(draft) !== JSON.stringify(saved);
-
-  useEffect(() => {
-    if (loading || !dirty || !draft) return;
-    const timer = setTimeout(() => void submit(draft), AUTOSAVE_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, [draft, dirty, loading]);
-
-  const saving = save.status === 'saving';
-  const syncState: SyncStatusState = saving
-    ? 'syncing'
-    : save.status === 'saved'
-      ? 'synced'
-      : dirty
-        ? 'pending'
-        : 'idle';
-
-  const errorMessage =
-    save.status === 'error'
-      ? t(`store.errors.${save.code}`) === `store.errors.${save.code}`
-        ? t('store.errors.generic')
-        : t(`store.errors.${save.code}`)
-      : null;
-
-  async function reloadZones() {
-    try {
-      const res = await fetchZones();
-      setZones(res.zones);
-      setZonesError(false);
-    } catch {
-      setZonesError(true);
-    }
-  }
-
-  async function handleAddZone(input: DeliveryZoneFormInput) {
-    try {
-      await createZone(input);
-      await reloadZones();
-    } catch {
-      setZonesError(true);
-    }
-  }
-
-  async function handleUpdateZone(id: number, input: DeliveryZoneFormInput) {
-    try {
-      await updateZone(id, input);
-      await reloadZones();
-    } catch {
-      setZonesError(true);
-    }
-  }
-
-  async function handleDeleteZone(id: number) {
-    try {
-      await deleteZone(id);
-      await reloadZones();
-    } catch {
-      setZonesError(true);
-    }
+    if (!draft) return;
+    const paymentMethods = enabled
+      ? [...new Set([...draft.paymentMethods, method])]
+      : draft.paymentMethods.filter((m) => m !== method);
+    patch({ paymentMethods });
   }
 
   return (
@@ -209,6 +65,8 @@ export default function Store() {
           />
         </header>
 
+        <StoreTabs />
+
         {loadError && (
           <p className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
             {t('store.loadError')}
@@ -217,11 +75,6 @@ export default function Store() {
         {errorMessage && (
           <p className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
             {errorMessage}
-          </p>
-        )}
-        {zonesError && (
-          <p className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
-            {t('store.errors.generic')}
           </p>
         )}
 
@@ -259,83 +112,9 @@ export default function Store() {
                 />
               )}
             </Card>
-
-            <Card title={t('store.zones.title')} subtitle={t('store.zones.subtitle')}>
-              {loading || !zones ? (
-                <ZonesTableSkeleton />
-              ) : (
-                <ZonesTable
-                  zones={zones}
-                  onAdd={(input) => void handleAddZone(input)}
-                  onUpdate={(id, input) => void handleUpdateZone(id, input)}
-                  onDelete={(id) => void handleDeleteZone(id)}
-                />
-              )}
-            </Card>
           </div>
 
           <div className="flex min-w-0 flex-col gap-6">
-            <Card title={t('store.fulfillment.title')}>
-              {loading || !draft ? (
-                <div className="flex flex-col gap-3">
-                  <div className="h-8 w-full animate-pulse rounded-xl bg-skeleton" />
-                  <div className="h-8 w-full animate-pulse rounded-xl bg-skeleton" />
-                </div>
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <label className="flex items-center gap-2 text-sm text-fg">
-                    <input
-                      type="checkbox"
-                      checked={draft.pickupEnabled}
-                      disabled={saving}
-                      onChange={(e) => patch({ pickupEnabled: e.target.checked })}
-                    />
-                    {t('store.fulfillment.pickup')}
-                  </label>
-                  <label className="flex items-center gap-2 text-sm text-fg">
-                    <input
-                      type="checkbox"
-                      checked={draft.deliveryEnabled}
-                      disabled={saving}
-                      onChange={(e) => patch({ deliveryEnabled: e.target.checked })}
-                    />
-                    {t('store.fulfillment.delivery')}
-                  </label>
-
-                  <label className="text-sm text-fg">
-                    {t('store.fulfillment.minOrder')}
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={(draft.minOrderCents / 100).toFixed(2).replace('.', ',')}
-                      disabled={saving}
-                      onChange={(e) => {
-                        const cents = Math.round(
-                          (Number(e.target.value.replace(',', '.')) || 0) * 100,
-                        );
-                        patch({ minOrderCents: cents });
-                      }}
-                      className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                    />
-                  </label>
-
-                  <label className="text-sm text-fg">
-                    {t('store.fulfillment.estimatedMinutes')}
-                    <input
-                      type="number"
-                      min={1}
-                      value={draft.estimatedMinutes}
-                      disabled={saving}
-                      onChange={(e) =>
-                        patch({ estimatedMinutes: Number(e.target.value) || 1 })
-                      }
-                      className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                    />
-                  </label>
-                </div>
-              )}
-            </Card>
-
             <Card title={t('store.payment.title')}>
               {loading || !draft ? (
                 <div className="h-24 w-full animate-pulse rounded-xl bg-skeleton" />

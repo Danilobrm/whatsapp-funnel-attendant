@@ -244,8 +244,12 @@ const enUS = {
   },
   store: {
     title: 'Store',
-    subtitle: 'Hours, delivery, payment and covered areas.',
+    subtitle: 'Hours, payment and status.',
     loadError: 'Could not load the store settings.',
+    tabs: {
+      general: 'General',
+      delivery: 'Delivery',
+    },
     errors: {
       generic: 'Could not save. Please try again.',
       timezone_required: 'Set a valid timezone.',
@@ -314,6 +318,10 @@ const enUS = {
       newNeighborhoodPlaceholder: 'Neighborhood (e.g. Downtown)',
       empty: 'No zones registered yet.',
     },
+  },
+  delivery: {
+    title: 'Delivery',
+    subtitle: 'Pickup, delivery, minimum order and covered areas.',
   },
 } as const;
 
