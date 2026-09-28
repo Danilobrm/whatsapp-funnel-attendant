@@ -5,6 +5,7 @@ import {
   UnauthorizedError,
 } from "../../modules/auth/auth.errors.js";
 import { InvalidInputError } from "../../modules/errors/invalidInput.error.js";
+import { InvalidMenuError } from "../../modules/errors/invalidMenu.error.js";
 import { InvalidSettingsError } from "../../modules/settings/settings.service.js";
 import { TenantNotFoundError } from "../../modules/tenants/tenant.service.js";
 
@@ -51,6 +52,16 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   }
 
   if (error instanceof InvalidInputError) {
+    res.status(422).json({
+      status: "invalid",
+      code: error.code,
+      field: error.field,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  if (error instanceof InvalidMenuError) {
     res.status(422).json({
       status: "invalid",
       code: error.code,

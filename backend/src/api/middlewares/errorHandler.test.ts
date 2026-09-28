@@ -5,6 +5,7 @@ import {
   UnauthorizedError,
 } from "../../modules/auth/auth.errors.js";
 import { InvalidInputError } from "../../modules/errors/invalidInput.error.js";
+import { InvalidMenuError } from "../../modules/errors/invalidMenu.error.js";
 import { InvalidSettingsError } from "../../modules/settings/settings.service.js";
 import { TenantNotFoundError } from "../../modules/tenants/tenant.service.js";
 import { errorHandler } from "./errorHandler.js";
@@ -166,6 +167,24 @@ describe("errorHandler", () => {
       status: "invalid",
       code: "text_required",
       field: "text",
+    });
+  });
+
+  it("maps InvalidMenuError to 422 with code and field", () => {
+    const res = makeRes();
+
+    errorHandler(
+      new InvalidMenuError("min_greater_than_max", "max_select"),
+      {} as never,
+      res as never,
+      vi.fn(),
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json.mock.calls[0]?.[0]).toMatchObject({
+      status: "invalid",
+      code: "min_greater_than_max",
+      field: "max_select",
     });
   });
 });
