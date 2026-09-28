@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 
 import { parseBRLInput } from '../../../lib/money.ts';
+import ItemImage from '../ItemImage';
 import { useT } from '../../../i18n/index.tsx';
 
 import type {
@@ -77,6 +78,7 @@ export default function ItemDrawer({
   );
   const [name, setName] = useState(item?.name ?? '');
   const [description, setDescription] = useState(item?.description ?? '');
+  const [imageUrl, setImageUrl] = useState(item?.imageUrl ?? '');
   const [pricingMode, setPricingMode] = useState<'single' | 'sizes'>(
     item && item.sizes.length > 0 ? 'sizes' : 'single',
   );
@@ -172,7 +174,7 @@ export default function ItemDrawer({
         categoryId,
         name: name.trim(),
         description: description.trim() || null,
-        imageUrl: item?.imageUrl ?? null,
+        imageUrl: imageUrl.trim() || null,
         priceCents: pricingMode === 'single' ? parseBRLInput(priceText) : null,
         available,
         active,
@@ -295,6 +297,36 @@ export default function ItemDrawer({
                 onChange={(e) => setDescription(e.target.value)}
                 className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
               />
+            </div>
+
+            <div>
+              <label
+                htmlFor="item-image"
+                className="block text-sm font-medium text-fg"
+              >
+                {t('menu.item.image')}
+              </label>
+              <div className="mt-2 flex items-start gap-3">
+                <ItemImage
+                  src={imageUrl.trim() || null}
+                  alt={name || t('menu.item.imagePlaceholderAlt')}
+                  size="md"
+                />
+                <div className="min-w-0 flex-1">
+                  <input
+                    id="item-image"
+                    type="text"
+                    inputMode="url"
+                    placeholder={t('menu.item.imageUrlPlaceholder')}
+                    value={imageUrl}
+                    onChange={(e) => setImageUrl(e.target.value)}
+                    className="w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                  />
+                  <p className="mt-2 text-[13px] text-fg-muted">
+                    {t('menu.item.imageHint')}
+                  </p>
+                </div>
+              </div>
             </div>
 
             <fieldset>

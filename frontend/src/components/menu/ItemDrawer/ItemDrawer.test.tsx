@@ -103,6 +103,24 @@ describe('ItemDrawer — creating an item', () => {
 
     expect(await screen.findByText('Preencha o nome.')).toBeInTheDocument();
   });
+
+  it('shows the placeholder icon with no image, and sends the typed URL', async () => {
+    const { onSave } = renderDrawer();
+
+    expect(screen.getByRole('img', { name: 'Sem imagem' })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Nome'), 'Calabresa');
+    await userEvent.type(screen.getByLabelText('Preço'), '45,00');
+    await userEvent.type(
+      screen.getByLabelText('Imagem'),
+      'https://example.com/calabresa.jpg',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ imageUrl: 'https://example.com/calabresa.jpg' }),
+    );
+  });
 });
 
 describe('ItemDrawer — editing an item', () => {
@@ -112,7 +130,7 @@ describe('ItemDrawer — editing an item', () => {
     name: 'Suco Natural',
     description: 'Polpa de fruta',
     priceCents: 900,
-    imageUrl: null,
+    imageUrl: 'https://example.com/suco.jpg',
     available: true,
     active: true,
     position: 0,
@@ -126,5 +144,6 @@ describe('ItemDrawer — editing an item', () => {
     expect(screen.getByDisplayValue('Suco Natural')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Polpa de fruta')).toBeInTheDocument();
     expect(screen.getByLabelText('Preço')).toHaveValue('9,00');
+    expect(screen.getByDisplayValue('https://example.com/suco.jpg')).toBeInTheDocument();
   });
 });
