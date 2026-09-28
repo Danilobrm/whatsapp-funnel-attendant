@@ -76,7 +76,7 @@ describe('Store — settings', () => {
   it('renders the opening hours and payment methods', async () => {
     renderPage();
 
-    expect(await screen.findByDisplayValue('11:00')).toBeInTheDocument();
+    expect(await screen.findByText('11:00 – 15:00')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Pix' })).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Cartão na entrega' })).not.toBeChecked();
   });

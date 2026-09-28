@@ -7,39 +7,53 @@ import OpeningHoursEditor from './OpeningHoursEditor.tsx';
 import type { OpeningHours } from '../../../api/store';
 
 describe('OpeningHoursEditor', () => {
-  it('shows "closed" for a day with no intervals', () => {
+  it('renderiza as 7 barras de dia, cada uma fechada por padrão', () => {
     renderWithProviders(<OpeningHoursEditor value={{}} onChange={vi.fn()} />);
     expect(screen.getAllByText('Fechado')).toHaveLength(7);
   });
 
-  it('renders the existing intervals as time inputs', () => {
+  it('mostra o intervalo existente do dia certo', () => {
     const value: OpeningHours = { mon: [['11:00', '15:00']] };
     renderWithProviders(<OpeningHoursEditor value={value} onChange={vi.fn()} />);
 
-    expect(screen.getByDisplayValue('11:00')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('15:00')).toBeInTheDocument();
+    expect(screen.getByText('11:00 – 15:00')).toBeInTheDocument();
+    // Só segunda tem intervalo — as outras 6 continuam "Fechado".
+    expect(screen.getAllByText('Fechado')).toHaveLength(6);
   });
 
-  it('adds an interval to a closed day', async () => {
+  it('adicionar intervalo num dia fechado grava só naquele dia', async () => {
     const onChange = vi.fn();
     renderWithProviders(<OpeningHoursEditor value={{}} onChange={onChange} />);
 
-    const [firstAddButton] = screen.getAllByRole('button', {
+    // As barras seguem a ordem seg..dom — o primeiro botão "Adicionar" é da segunda.
+    const [addToMonday] = screen.getAllByRole('button', {
       name: 'Adicionar intervalo',
     });
-    await userEvent.click(firstAddButton!);
+    await userEvent.click(addToMonday!);
 
-    expect(onChange).toHaveBeenCalledWith({ mon: [['18:00', '23:00']] });
+    expect(onChange).toHaveBeenCalledWith({ mon: [['11:00', '15:00']] });
   });
 
-  it('removes an interval', async () => {
+  it('remover o único intervalo do dia apaga a chave do dia (fica fechado)', async () => {
     const onChange = vi.fn();
     renderWithProviders(
-      <OpeningHoursEditor value={{ mon: [['11:00', '15:00']] }} onChange={onChange} />,
+      <OpeningHoursEditor value={{ tue: [['11:00', '15:00']] }} onChange={onChange} />,
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Remover intervalo' }));
 
     expect(onChange).toHaveBeenCalledWith({});
+  });
+
+  it('desabilita as barras quando disabled', () => {
+    renderWithProviders(
+      <OpeningHoursEditor
+        value={{ mon: [['11:00', '15:00']] }}
+        onChange={vi.fn()}
+        disabled
+      />,
+    );
+
+    expect(screen.getByTestId('handle-0-start')).toHaveAttribute('tabindex', '-1');
   });
 });
