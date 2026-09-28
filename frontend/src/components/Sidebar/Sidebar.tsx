@@ -1,6 +1,6 @@
 import type { ComponentType, SVGProps } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Bot, FlaskConical } from 'lucide-react';
+import { Bot, FlaskConical, Store, UtensilsCrossed } from 'lucide-react';
 
 import { useT } from '../../i18n/index.tsx';
 
@@ -20,6 +20,16 @@ const topItems: NavItem[] = [
     to: '/admin/simulator',
     labelKey: 'sidebar.simulator',
     Icon: FlaskConical as IconComponent,
+  },
+  {
+    to: '/admin/menu',
+    labelKey: 'sidebar.menu',
+    Icon: UtensilsCrossed as IconComponent,
+  },
+  {
+    to: '/admin/store',
+    labelKey: 'sidebar.store',
+    Icon: Store as IconComponent,
   },
 ];
 

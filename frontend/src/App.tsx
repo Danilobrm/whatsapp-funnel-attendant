@@ -4,8 +4,10 @@ import AdminLayout from './components/AdminLayout';
 import PublicLayout from './components/PublicLayout';
 import RequireAuth from './components/RequireAuth';
 import Login from './pages/Login';
+import Menu from './pages/Menu';
 import Settings from './pages/Settings';
 import Simulator from './pages/Simulator';
+import Store from './pages/Store';
 
 /**
  * O cliente final nunca abre este app — ele conversa pelo WhatsApp. Tudo aqui
@@ -22,6 +24,8 @@ export default function App() {
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<Navigate to="simulator" replace />} />
           <Route path="simulator" element={<Simulator />} />
+          <Route path="menu" element={<Menu />} />
+          <Route path="store" element={<Store />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Route>
