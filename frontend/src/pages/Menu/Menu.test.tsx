@@ -93,7 +93,7 @@ describe('Menu — categories and items', () => {
     renderPage();
     await screen.findByText('Calabresa');
 
-    await userEvent.click(screen.getByRole('checkbox', { name: 'Disponível' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Disponível' }));
 
     expect(setAvailabilityMock).toHaveBeenCalledWith(10, false);
   });

@@ -1,6 +1,7 @@
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 
 import { formatBRL } from '../../../lib/money.ts';
+import ItemImage from '../ItemImage';
 
 import type { MenuItem } from '../../../api/menu';
 
@@ -32,6 +33,7 @@ export function ItemRowSkeleton() {
       data-testid="item-row-skeleton"
       className="flex items-center gap-3 rounded-xl border border-line p-3"
     >
+      <div className="h-14 w-14 flex-none animate-pulse rounded-xl bg-skeleton" />
       <div className="h-4 w-40 animate-pulse rounded bg-skeleton" />
       <div className="ml-auto h-4 w-20 animate-pulse rounded bg-skeleton" />
     </div>
@@ -58,7 +60,7 @@ export default function ItemRow({
   onMoveDown,
 }: ItemRowProps) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-line p-3">
+    <div className="flex items-center gap-3 rounded-xl border border-line p-3 transition hover:border-line-strong">
       <div className="flex flex-none flex-col">
         <button
           type="button"
@@ -80,11 +82,13 @@ export default function ItemRow({
         </button>
       </div>
 
+      <ItemImage src={item.imageUrl} alt={item.name} size="sm" />
+
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-fg">
+        <p className="flex items-center gap-2 truncate text-sm font-medium text-fg">
           {item.name}
           {!item.active && (
-            <span className="ml-2 rounded-full bg-hover px-2 py-0.5 text-[11px] text-fg-subtle">
+            <span className="flex-none rounded-full bg-hover px-2 py-0.5 text-[11px] text-fg-subtle">
               {labels.inactive}
             </span>
           )}
@@ -96,19 +100,31 @@ export default function ItemRow({
         )}
       </div>
 
-      <span className="flex-none text-sm text-fg-muted">
+      <span className="flex-none text-sm font-medium text-fg">
         {priceLabel(item, labels)}
       </span>
 
-      <label className="flex flex-none cursor-pointer items-center gap-2 text-[13px] text-fg-muted">
-        <input
-          type="checkbox"
-          checked={item.available}
-          disabled={busy}
-          onChange={(e) => onToggleAvailability(e.target.checked)}
+      <button
+        type="button"
+        role="switch"
+        aria-checked={item.available}
+        aria-label={item.available ? labels.available : labels.unavailable}
+        disabled={busy}
+        onClick={() => onToggleAvailability(!item.available)}
+        className={`flex flex-none items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-medium transition disabled:opacity-60 ${
+          item.available
+            ? 'bg-success-bg text-success'
+            : 'bg-warning-bg text-warning-fg'
+        }`}
+      >
+        <span
+          aria-hidden="true"
+          className={`h-1.5 w-1.5 flex-none rounded-full ${
+            item.available ? 'bg-success' : 'bg-warning'
+          }`}
         />
         {item.available ? labels.available : labels.unavailable}
-      </label>
+      </button>
 
       <button
         type="button"

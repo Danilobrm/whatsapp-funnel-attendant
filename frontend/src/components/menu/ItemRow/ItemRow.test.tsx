@@ -41,6 +41,27 @@ describe('ItemRow', () => {
     expect(screen.getByText('R$ 45,00')).toBeInTheDocument();
   });
 
+  it('shows the placeholder when the item has no image', () => {
+    render(<ItemRow item={item()} labels={LABELS} onEdit={vi.fn()} onDelete={vi.fn()} onToggleAvailability={vi.fn()} />);
+    expect(screen.getByRole('img', { name: 'Calabresa' }).tagName).not.toBe('IMG');
+  });
+
+  it('shows the real image when the item has one', () => {
+    render(
+      <ItemRow
+        item={item({ imageUrl: 'https://example.com/pizza.jpg' })}
+        labels={LABELS}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onToggleAvailability={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('img', { name: 'Calabresa' })).toHaveAttribute(
+      'src',
+      'https://example.com/pizza.jpg',
+    );
+  });
+
   it('shows "from" the cheapest size when the item has sizes', () => {
     render(
       <ItemRow
@@ -66,7 +87,7 @@ describe('ItemRow', () => {
       <ItemRow item={item()} labels={LABELS} onEdit={vi.fn()} onDelete={vi.fn()} onToggleAvailability={onToggle} />,
     );
 
-    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('switch'));
     expect(onToggle).toHaveBeenCalledWith(false);
   });
 
