@@ -87,6 +87,18 @@ describe('Menu — categories and items', () => {
     expect(await screen.findByDisplayValue('Pizzas')).toBeInTheDocument();
     expect(screen.getByText('Calabresa')).toBeInTheDocument();
     expect(screen.getByText('R$ 45,00')).toBeInTheDocument();
+    expect(screen.getByText('1 item')).toBeInTheDocument();
+  });
+
+  it('shows the empty-category message when a category has no items', async () => {
+    fetchMock.mockResolvedValue({
+      menu: [{ id: 2, name: 'Bebidas', position: 0, active: true, items: [] }],
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText('Nenhum item nesta categoria ainda.'),
+    ).toBeInTheDocument();
   });
 
   it('toggles item availability', async () => {

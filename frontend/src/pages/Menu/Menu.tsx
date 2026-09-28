@@ -271,6 +271,13 @@ export default function Menu() {
                     className="min-w-0 flex-1 rounded-xl border border-transparent bg-transparent px-2 py-1 text-sm font-semibold text-fg outline-none transition hover:border-line focus:border-accent focus:bg-canvas"
                   />
 
+                  <span className="flex-none text-[13px] text-fg-subtle">
+                    {category.items.length}{' '}
+                    {category.items.length === 1
+                      ? t('menu.category.itemLabel')
+                      : t('menu.category.itemsLabel')}
+                  </span>
+
                   <label className="flex items-center gap-2 text-[13px] text-fg-muted">
                     <input
                       type="checkbox"
@@ -291,6 +298,11 @@ export default function Menu() {
                 </header>
 
                 <div className="flex flex-col gap-2">
+                  {category.items.length === 0 && (
+                    <p className="rounded-xl border border-dashed border-line px-3 py-4 text-center text-[13px] text-fg-subtle">
+                      {t('menu.category.emptyCategory')}
+                    </p>
+                  )}
                   {category.items.map((item, itemIndex) => (
                     <ItemRow
                       key={item.id}
