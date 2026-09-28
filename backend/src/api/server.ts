@@ -4,8 +4,10 @@ import express, { type Express, type Request } from "express";
 import { env } from "../config/env.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { healthRoutes } from "./routes/healthRoutes.js";
+import { menuRoutes } from "./routes/menuRoutes.js";
 import { settingsRoutes } from "./routes/settingsRoutes.js";
 import { simulatorRoutes } from "./routes/simulatorRoutes.js";
+import { storeRoutes } from "./routes/storeRoutes.js";
 import { whatsappRoutes } from "./routes/whatsappRoutes.js";
 import { requireAuth } from "./middlewares/auth/requireAuth.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
@@ -40,6 +42,8 @@ export function createServer(): Express {
   // existe lugar onde omitir.
   app.use("/api/settings", requireAuth, settingsRoutes);
   app.use("/api/simulator", requireAuth, simulatorRoutes);
+  app.use("/api/menu", requireAuth, menuRoutes);
+  app.use("/api/store", requireAuth, storeRoutes);
 
   app.use(errorHandler);
 
