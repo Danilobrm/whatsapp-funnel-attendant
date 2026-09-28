@@ -1,6 +1,8 @@
 # Plano da v1 — Attendant para restaurantes e lanchonetes
 
-Objetivo da v1: um restaurante recebe pedidos reais pelo WhatsApp, do "oi" até o pedido na tela do balcão, sem ninguém vigiando a conversa. Tudo que não serve a isso está em "Fora da v1".
+Objetivo da v1: um restaurante recebe pedidos pelo atendente, do "oi" até o pedido na tela do balcão, sem ninguém vigiando a conversa. Tudo que não serve a isso está em "Fora da v1".
+
+**O WhatsApp é a ÚLTIMA fase (Fase 7).** Até lá, todo o sistema é construído e testado pelo simulador do painel, que passa pelo mesmo `handleInboundMessage` que o webhook vai usar. Regra para as fases 1 a 6: nenhuma funcionalidade pode depender do WhatsApp estar ligado. Mensagens ao cliente saem por `sendOutbound` (canal-agnóstico) e avisos ao dono aparecem no painel.
 
 ## Como executar este plano
 
@@ -18,6 +20,7 @@ Objetivo da v1: um restaurante recebe pedidos reais pelo WhatsApp, do "oi" até 
 - **Snapshot no pedido**: `order_items` guarda nome e preço do momento. Editar o cardápio depois não altera pedido antigo.
 - Toda tabela nova tem `tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE` e entra no `init.sql` de forma idempotente.
 - Funções puras (preço, horário, transição de status, resumo) ficam em arquivos próprios, sem banco, com testes de tabela.
+- **Canal-agnóstico**: nenhum módulo fora de `modules/whatsapp/` chama o client da Meta. Toda mensagem ao cliente sai por `sendOutbound(tenantId, conversationId, text)`, que decide pelo canal da conversa.
 
 ---
 
@@ -26,7 +29,7 @@ Objetivo da v1: um restaurante recebe pedidos reais pelo WhatsApp, do "oi" até 
 Sem cardápio o agente não tem o que vender. Esta fase não mexe no agente.
 
 ### Backend
-- [ ] Tabelas:
+- [x] Tabelas:
   - `menu_categories (id, tenant_id, name, position, active)`
   - `menu_items (id, tenant_id, category_id, name, description, price_cents, image_url NULL, available BOOL DEFAULT true, position, active)`
     - `available` = "esgotado hoje" (volta a true sozinho? não na v1, é manual). `active` = removido do cardápio.
@@ -38,18 +41,18 @@ Sem cardápio o agente não tem o que vender. Esta fase não mexe no agente.
     - `opening_hours`: `{ "mon": [["11:00","15:00"],["18:00","23:30"]], ... }`. Intervalo que cruza meia-noite (`["18:00","02:00"]`) precisa funcionar.
     - `payment_methods`: subconjunto de `pix`, `cash`, `card_on_delivery`.
   - `delivery_zones (id, tenant_id, neighborhood, fee_cents, active)` — entrega por bairro na v1. Busca normalizada (sem acento, minúsculas).
-- [ ] Módulo `modules/menu/`: repository + service. CRUD de categorias, itens, tamanhos, grupos, opções. Reordenar por `position`. `getPublishedMenu(tenantId)` devolve o cardápio completo ativo (usado pelo agente na fase 2), com cache curto invalidado na escrita (mesmo padrão de `settings.service`).
-- [ ] Módulo `modules/store/`: settings + zonas. Funções puras em `store.hours.ts`:
+- [x] Módulo `modules/menu/`: repository + service. CRUD de categorias, itens, tamanhos, grupos, opções. Reordenar por `position`. `getPublishedMenu(tenantId)` devolve o cardápio completo ativo (usado pelo agente na fase 2), com cache curto invalidado na escrita (mesmo padrão de `settings.service`).
+- [x] Módulo `modules/store/`: settings + zonas. Funções puras em `store.hours.ts`:
   - `isOpenAt(settings, date): boolean`
   - `nextOpening(settings, date): Date | null`
   - `describeHours(settings): string` (texto pt-BR para o bot: "Seg a Sex 11h às 15h e 18h às 23h30")
-- [ ] Rotas guardadas: `/api/menu/*`, `/api/store`, `/api/store/zones`. Validação com erro tipado `InvalidMenuError(code, field)` → 422 (novo branch no `errorHandler`).
-- [ ] Seed: cardápio de lanchonete realista para a Pizzaria Demo (pizzas com tamanhos + borda + meio a meio, lanches com adicionais, bebidas), horários, 5 bairros com taxa, Pix + dinheiro + cartão.
+- [x] Rotas guardadas: `/api/menu/*`, `/api/store`, `/api/store/zones`. Validação com erro tipado `InvalidMenuError(code, field)` → 422 (novo branch no `errorHandler`).
+- [x] Seed: cardápio de lanchonete realista para a Pizzaria Demo (pizzas com tamanhos + borda + meio a meio, lanches com adicionais, bebidas), horários, 5 bairros com taxa, Pix + dinheiro + cartão.
 
 ### Frontend
-- [ ] `/admin/menu`: lista por categoria; criar/editar item em drawer lateral (nome, descrição, preço OU tamanhos, grupos de adicionais); toggle "esgotado" direto na lista (ação mais usada no dia a dia, um clique); reordenar.
-- [ ] `/admin/store`: horários por dia (vários intervalos), botão "fechar agora / reabrir", pedido mínimo, tempo estimado, retirada sim/não, formas de pagamento, chave Pix, WhatsApp do dono, tabela de bairros e taxas.
-- [ ] Sidebar ganha Cardápio e Loja. Autosave no padrão de `/admin/settings` onde fizer sentido.
+- [x] `/admin/menu`: lista por categoria; criar/editar item em drawer lateral (nome, descrição, preço OU tamanhos, grupos de adicionais); toggle "esgotado" direto na lista (ação mais usada no dia a dia, um clique); reordenar.
+- [x] `/admin/store`: horários por dia (vários intervalos), botão "fechar agora / reabrir", pedido mínimo, tempo estimado, retirada sim/não, formas de pagamento, chave Pix, WhatsApp do dono, tabela de bairros e taxas.
+- [x] Sidebar ganha Cardápio e Loja. Autosave no padrão de `/admin/settings` onde fizer sentido.
 
 ### Testes obrigatórios
 - `store.hours`: intervalo normal, dois intervalos no dia, cruzando meia-noite, dia fechado, fuso diferente do servidor, loja pausada.
@@ -98,6 +101,7 @@ O coração do produto. O agente para de só conversar e passa a montar pedido.
 
 ### Frontend
 - [ ] Simulador mostra, em modo dev (toggle), as ferramentas chamadas em cada turno e o carrinho atual ao lado da conversa. É a ferramenta de depuração do agente; o endpoint devolve isso só para o canal `simulator`.
+- [ ] **Clientes simulados**: o simulador deixa escolher ou criar um cliente de teste (nome + telefone fictício). Cada um é uma conversa própria (`contact = sim-<telefone>`) e um registro em `customers`. É o que permite testar cliente recorrente ("o mesmo de sábado") e, na Fase 3, vários pedidos simultâneos no kanban sem WhatsApp. Backend: `/api/simulator` passa a receber `contactId`.
 
 ### Testes obrigatórios
 - `pricing`: tamanhos, adicionais somando, meio a meio com `max` e `average`, quantidade, taxa por bairro, mínimo, troco, item esgotado entre a adição e a confirmação.
@@ -125,10 +129,10 @@ A tela que fica aberta no balcão.
   - `out_for_delivery | ready_for_pickup → completed`
   - `pending | accepted → cancelled`
   - Transição inválida → `InvalidTransitionError` → 409.
-- [ ] Mensagem automática ao cliente em cada transição (texto fixo por status, com número e tempo estimado; rejeição inclui o motivo). Envio por canal: WhatsApp via `sendWhatsAppText`, simulador gravando mensagem outbound. Criar `sendOutbound(tenantId, conversationId, text)` no módulo conversation — nenhum outro módulo chama o client do WhatsApp direto.
+- [ ] Mensagem automática ao cliente em cada transição (texto fixo por status, com número e tempo estimado; rejeição inclui o motivo). Criar `sendOutbound(tenantId, conversationId, text)` no módulo conversation: grava a mensagem outbound e, só se o canal for `whatsapp`, envia pela Meta. Nas fases 1 a 6 só o simulador existe na prática, e as mensagens aparecem na conversa do cliente simulado.
 - [ ] Rotas guardadas: `GET /api/orders?status=&date=`, `GET /api/orders/:id`, `POST /api/orders/:id/transition { to, reason? }`.
 - [ ] Tempo real: `GET /api/orders/stream` (SSE) com EventEmitter em memória por tenant (instância única na v1; documentar que multi-instância exige Redis/pubsub). Autenticação via header no fetch streaming (não usar EventSource com token na URL).
-- [ ] Alerta de pedido parado: pedido `pending` há mais de 5 min → mensagem ao cliente ("o restaurante já vai confirmar") e aviso no `owner_whatsapp`. Varredura com `setInterval` iniciada só no `index.ts` (nunca no import, para não travar o vitest).
+- [ ] Alerta de pedido parado: pedido `pending` há mais de 5 min → mensagem ao cliente ("o restaurante já vai confirmar") via `sendOutbound` e evento `order_stale` no stream (o painel destaca). O aviso no WhatsApp pessoal do dono fica para a Fase 7. Varredura com `setInterval` iniciada só no `index.ts` (nunca no import, para não travar o vitest).
 
 ### Frontend
 - [ ] `/admin/orders` vira a tela inicial do painel. Kanban: Novos · Em preparo · Saiu / Pronto · Concluídos hoje. Cartão com número, cliente, total, tempo desde a criação (fica vermelho após 5 min em Novos).
@@ -145,7 +149,7 @@ A tela que fica aberta no balcão.
 - Frontend: novo pedido chegando pelo stream aparece em Novos; recusa sem motivo não envia.
 
 ### Pronto quando
-Pedido feito no simulador aparece no kanban na hora com som, e aceitar/avançar/concluir manda as mensagens certas de volta na conversa.
+Pedido feito no simulador aparece no kanban na hora com som, e aceitar/avançar/concluir manda as mensagens certas de volta na conversa do cliente simulado. Três clientes simulados com pedidos ao mesmo tempo aparecem corretamente.
 
 ---
 
@@ -154,12 +158,12 @@ Pedido feito no simulador aparece no kanban na hora com som, e aceitar/avançar/
 ### Backend
 - [ ] `conversations` ganha `bot_paused BOOL DEFAULT false`, `handoff_requested_at NULL`, `handoff_reason NULL`.
 - [ ] `handleInboundMessage`: com `bot_paused`, grava a mensagem e não responde (o humano está atendendo).
-- [ ] Fallback da persona e a ferramenta `call_human` marcam `handoff_requested_at` e avisam o `owner_whatsapp`.
+- [ ] Fallback da persona e a ferramenta `call_human` marcam `handoff_requested_at` e emitem evento `handoff` no stream (o painel mostra contador e som). Aviso no WhatsApp do dono fica para a Fase 7.
 - [ ] Rotas: `GET /api/conversations?filter=handoff|all`, `GET /api/conversations/:id/messages`, `POST /api/conversations/:id/messages` (humano envia via `sendOutbound`), `POST /api/conversations/:id/pause`, `POST /api/conversations/:id/resume`.
 - [ ] Mensagens novas entram no mesmo stream SSE (evento `message`).
 
 ### Frontend
-- [ ] `/admin/conversations`: lista à esquerda (pedindo humano no topo, destacadas), conversa à direita, carrinho/último pedido do cliente no painel lateral, botões "Assumir" e "Devolver ao bot", composer para responder como a loja.
+- [ ] `/admin/conversations`: mostra conversas de todos os canais (hoje, só as do simulador), com o canal indicado. Lista à esquerda (pedindo humano no topo, destacadas), conversa à direita, carrinho/último pedido do cliente no painel lateral, botões "Assumir" e "Devolver ao bot", composer para responder como a loja.
 
 ### Pronto quando
 Uma conversa em que o bot não soube ajudar aparece destacada, o dono assume, responde pelo painel e devolve ao bot.
@@ -174,10 +178,9 @@ Decide se um restaurante novo entra em 10 minutos ou desiste.
 - [ ] `POST /api/menu/import` recebe foto(s) ou PDF do cardápio, usa um modelo com visão para extrair `{ categorias, itens, preços, tamanhos, adicionais }` em JSON validado por schema, e devolve uma PRÉVIA (nada é gravado).
 - [ ] `POST /api/menu/import/confirm` grava a prévia revisada em lote, numa transação.
 - [ ] Preços extraídos que não parecem preço, itens duplicados e categorias vazias voltam marcados na prévia para revisão.
-- [ ] Conexão do WhatsApp na v1 é **manual**: o `phone_number_id` é preenchido por você (suporte) numa rota interna protegida. O Embedded Signup da Meta fica para depois; verificar o modo coexistência (número continua no app WhatsApp Business do dono).
 
 ### Frontend
-- [ ] `/admin/onboarding`, aberto automaticamente enquanto a loja estiver incompleta: 1) dados da loja, 2) importar cardápio (upload → prévia editável → confirmar), 3) horários, entrega e pagamento, 4) testar no simulador, 5) status da conexão do WhatsApp.
+- [ ] `/admin/onboarding`, aberto automaticamente enquanto a loja estiver incompleta: 1) dados da loja, 2) importar cardápio (upload → prévia editável → confirmar), 3) horários, entrega e pagamento, 4) testar no simulador. O passo de conexão do WhatsApp entra na Fase 7.
 - [ ] Checklist de "loja pronta" visível no topo do painel até tudo estar completo.
 
 ### Pronto quando
@@ -193,6 +196,33 @@ Com a foto de um cardápio real de lanchonete, o dono chega a um cardápio revis
 
 ---
 
+## Fase 7 — WhatsApp (última)
+
+O webhook, a assinatura, a deduplicação e o envio já existem desde a base (`modules/whatsapp/`, testados). Esta fase liga o que foi construído no simulador ao canal real.
+
+### Backend
+- [ ] Revisar que tudo das fases 1 a 6 passa por `handleInboundMessage` / `sendOutbound` — nenhum caminho exclusivo do simulador (exceto o modo dev de depuração do agente).
+- [ ] `customers` a partir do `wa_id` e do nome de perfil do webhook (mesmo fluxo dos clientes simulados).
+- [ ] Avisos ao dono no `owner_whatsapp`: pedido parado (Fase 3) e pedido de humano (Fase 4). Fora da janela de 24h a Meta exige template aprovado; na v1, aceitar que o aviso só chega se o dono tiver mandado mensagem ao número nas últimas 24h, ou cadastrar um template utilitário.
+- [ ] Rota interna protegida para preencher `tenants.whatsapp_phone_number_id` (conexão manual, feita por você).
+- [ ] Mensagens de status do pedido: confirmar que cabem na janela de 24h (o cliente acabou de escrever) e tratar o erro da Meta quando não couber (log + evento no painel, nunca derrubar a transição do pedido).
+- [ ] Mídia: o aviso fixo de "só texto" já existe; conferir com áudio, imagem e localização reais.
+
+### Frontend
+- [ ] Passo "Conectar WhatsApp" no onboarding e status da conexão em `/admin/store`.
+- [ ] Conversas mostram o canal e o nome de perfil do WhatsApp.
+
+### Teste manual (número de teste da Meta, ver README)
+- [ ] Pedido completo pelo celular, do "oi" à confirmação, aparecendo no kanban.
+- [ ] Reenvio do mesmo webhook não duplica resposta nem pedido.
+- [ ] Mudança de status no painel chega no celular.
+- [ ] Handoff: assumir pelo painel, responder, devolver ao bot.
+
+### Pronto quando
+Um pedido feito do celular pelo WhatsApp percorre exatamente o mesmo caminho que já funcionava no simulador.
+
+---
+
 ## Fora da v1
 
 - Pix com confirmação automática de pagamento (link / cobrança dinâmica).
@@ -200,6 +230,6 @@ Com a foto de um cardápio real de lanchonete, o dono chega a um cardápio revis
 - Integração com iFood ou outros marketplaces.
 - Múltiplas unidades por conta.
 - Fidelidade, cupons e campanhas (exigem templates pagos da Meta).
-- Embedded Signup da Meta (autoatendimento da conexão do WhatsApp).
+- Embedded Signup da Meta (autoatendimento da conexão do WhatsApp) e modo coexistência com o app WhatsApp Business.
 - App mobile do dono (o painel precisa ser responsivo, e basta).
 - Idiomas além de pt-BR no atendente.

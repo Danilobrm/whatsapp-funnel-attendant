@@ -63,12 +63,14 @@ src/
     ├── tenants/             # TenantId brand, resolve by WhatsApp phone_number_id (cached, positive-only)
     ├── auth/                # jwt (HS256 allowlist), bcrypt, no user enumeration
     ├── settings/            # persona per tenant → deterministic texts (greeting/identity/fallback/junk)
+    ├── menu/                # categories/items/sizes/option groups CRUD + getPublishedMenu (cached, agent-facing)
+    ├── store/                # store settings, delivery zones, store.hours.ts (pure) + neighborhood.ts (pure)
     ├── ai/                  # guardrails.ts (message gate), ollama-client.ts
     ├── conversation/        # handleInboundMessage — THE single entry point for every channel
     ├── agent/               # generateAgentReply (LLM) + agent.prompt.ts (pure prompt building)
     ├── whatsapp/            # webhook signature, payload parsing, Graph API client, processWebhook
     ├── health/
-    └── errors/              # InvalidInputError → 422
+    └── errors/              # InvalidInputError → 422, InvalidMenuError → 422 (menu + store)
 ```
 
 Routes:
@@ -79,13 +81,15 @@ app.use("/api/auth", authRoutes);                          // POST /login open; 
 app.use("/webhooks/whatsapp", whatsappRoutes);             // public, authenticated by HMAC signature
 app.use("/api/settings", requireAuth, settingsRoutes);
 app.use("/api/simulator", requireAuth, simulatorRoutes);   // GET/DELETE /conversation, POST /messages
+app.use("/api/menu", requireAuth, menuRoutes);             // categories, items (+ sizes/option groups nested), reorder, availability
+app.use("/api/store", requireAuth, storeRoutes);           // settings + /zones CRUD
 ```
 
 ### Multi-tenancy — `tenantId` is ALWAYS the first repository argument
 
 - Every repository function and tenant-scoped service takes `tenantId: TenantId` first. Deliberate exceptions carry a comment: `findUserByEmail` (login precedes the tenant) and `findTenantByWhatsAppPhoneNumberId` (it is what discovers the tenant).
 - `TenantId` is a **branded** number, minted only via `asTenantId()` at trust boundaries (JWT verification, WhatsApp phone_number_id resolution, seed). Argument transposition becomes a compile error.
-- Tables with `tenant_id`: `tenants`, `users`, `bot_settings`, `conversations`, `messages`. Every FK is `ON DELETE CASCADE`.
+- Tables with `tenant_id`: `tenants`, `users`, `bot_settings`, `conversations`, `messages`, `menu_categories`, `menu_items`, `item_sizes`, `option_groups`, `options`, `store_settings`, `delivery_zones`. Every FK is `ON DELETE CASCADE`.
 - `insertMessage` guards `conversationId` with `EXISTS (... AND tenant_id = $1)` so a foreign id is a no-op.
 - Unit tests mock `query`; they prove the filter was typed, not that it isolates. Verify isolation end to end.
 
@@ -130,19 +134,36 @@ Reply `provider` is `persona` (fixed text) or `agent` (LLM); the simulator shows
 
 ### Errors
 
-- `errorHandler` maps: `UnauthorizedError` 401, `ForbiddenError` 403, `TenantNotFoundError` 404, `InvalidSettingsError`/`InvalidInputError` 422, anything else 500 with a fixed safe message (never `error.message` — it leaks host/port/columns, and this handler serves anonymous callers).
+- `errorHandler` maps: `UnauthorizedError` 401, `ForbiddenError` 403, `TenantNotFoundError` 404, `InvalidSettingsError`/`InvalidInputError`/`InvalidMenuError` 422, anything else 500 with a fixed safe message (never `error.message` — it leaks host/port/columns, and this handler serves anonymous callers).
 - Auth/forbidden/not-found branches return `code` only, no message.
 
 ### Database
 
 `backend/db/init.sql` runs on the first Postgres start AND on every backend boot (`runMigrations`). Everything must be idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `DO $$ … EXCEPTION WHEN duplicate_object $$`). Destructive changes need a reset: `docker compose down && docker volume rm attendant_postgres_data && docker compose up -d`, then `npm run seed`.
 
+### Menu (`modules/menu/`)
+
+- `menu_categories` → `menu_items` → `item_sizes` / `option_groups` → `options`, all `tenant_id`-scoped, `ON DELETE CASCADE`.
+- An item's price comes from `price_cents` (no sizes) OR from `item_sizes` (sizes present, `price_cents` is `NULL` and ignored). Validated at write time: `InvalidMenuError("price_or_sizes_required", ...)`.
+- `option_groups.pricing_rule`: `sum` (add-ons stack) | `max` | `average` — `average` with `max_select = 2` is the half-and-half pizza pattern (two flavor options, price is their average).
+- `createItem`/`updateItem` replace the item's sizes and option groups wholesale (delete-all, reinsert) inside one transaction — simpler and safer than a granular diff, and matches how the drawer submits (always the full nested state).
+- `getFullMenu(tenantId)` (panel — everything, active or not) vs. `getPublishedMenu(tenantId)` (agent, fase 2 — only `active` categories/items, short-TTL cache invalidated on every write, same pattern as `settings.service`).
+
+### Store (`modules/store/`)
+
+- `store_settings`: one row per tenant, defaults applied in the service (same lazy-default pattern as `bot_settings`).
+- `store.hours.ts` is pure (no DB): `isOpenAt`/`nextOpening` evaluate `opening_hours` JSON in the STORE's `timezone` (via `Intl.DateTimeFormat`, not the server's), never the container's local time. A day's interval crossing midnight (`["18:00","02:00"]`) is open into the next calendar day; `nextOpening` walks up to 14 days ahead. `describeHours` renders the pt-BR sentence the agent will use (fase 2).
+- `neighborhood.ts` (`normalizeNeighborhood`) strips accents/case for `delivery_zones.neighborhood_key`, the column the agent will match against free-text neighborhood input in fase 2. `UNIQUE (tenant_id, neighborhood_key)`.
+
 ## Frontend architecture
 
 - `src/api/*` all go through `client.ts` `request()` — single place for `Authorization: Bearer`, base URL, 401 handling and 204. Mapping a status in `onStatus` opts that call out of the global sign-out.
 - `useAuth` hydrates synchronously from storage and revalidates via `/api/auth/me`; only a real 401 signs out. The 401 handler never navigates; `RequireAuth` does.
-- Routes: `/login` (public); `/admin/simulator`, `/admin/settings` (guarded); everything else → `/admin`.
+- Routes: `/login` (public); `/admin/simulator`, `/admin/menu`, `/admin/store`, `/admin/settings` (guarded); everything else → `/admin`.
 - `pages/Simulator` + `hooks/useSimulator`: test conversation per admin (`contact = admin-<userId>`, channel `simulator`). `/reiniciar` is a panel command (`hooks/chatCommands`), handled locally, never sent to the attendant. Errors render `chat.errors.<code>` with fallback to `chat.error` — never `err.message`.
+- `pages/Menu`: categories with nested items, up/down reorder (calls `/reorder`, no drag-and-drop), one-click "esgotado" toggle (`PATCH .../availability`, optimistic with rollback on failure), `ItemDrawer` for create/edit (name, description, single price OR sizes, option groups with nested options — mirrors `MenuItemFormInput`). `menu.errors.<code>` per `InvalidMenuError`, fallback `menu.errors.generic`.
+- `pages/Store`: settings autosave on the `/admin/settings` 700ms-debounce pattern (`OpeningHoursEditor` for per-day intervals, pause/reopen, fulfillment, payment methods, Pix key, owner WhatsApp); `ZonesTable` is direct CRUD (create/update/delete per row, no debounce — it's a list, not a form).
+- `lib/money.ts`: `formatBRL`/`parseBRLInput`, the ONLY place cents↔BRL-string conversion happens. Every price input in `Menu`/`Store` reads and writes cents; the text field is the only float-shaped thing, and it never reaches state or the API.
 - `pages/Settings`: persona editor with 700ms autosave and live preview from the backend (same source the conversation uses).
 - i18n: `pt-BR` canonical + `en-US`. This is the admin UI language, unrelated to the bot's language.
 
