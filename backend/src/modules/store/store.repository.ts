@@ -1,4 +1,4 @@
-import { query } from "../../config/db.js";
+import { tenantQuery } from "../../config/tenantQuery.js";
 import { normalizeNeighborhood } from "./neighborhood.js";
 
 import type { TenantId } from "../tenants/tenant.types.js";
@@ -51,7 +51,8 @@ const STORE_SETTINGS_COLUMNS = `timezone, opening_hours, paused, min_order_cents
 export async function findStoreSettings(
   tenantId: TenantId,
 ): Promise<StoreSettings | null> {
-  const result = await query<StoreSettingsRow>(
+  const result = await tenantQuery<StoreSettingsRow>(
+    tenantId,
     `SELECT ${STORE_SETTINGS_COLUMNS}
        FROM store_settings
       WHERE tenant_id = $1`,
@@ -66,7 +67,8 @@ export async function saveStoreSettings(
   tenantId: TenantId,
   settings: Omit<StoreSettings, "updatedAt">,
 ): Promise<StoreSettings> {
-  const result = await query<StoreSettingsRow>(
+  const result = await tenantQuery<StoreSettingsRow>(
+    tenantId,
     `INSERT INTO store_settings (
         tenant_id, timezone, opening_hours, paused, min_order_cents,
         estimated_minutes, pickup_enabled, delivery_enabled,
@@ -124,7 +126,8 @@ function toZone(row: DeliveryZoneRow): DeliveryZone {
 export async function listDeliveryZones(
   tenantId: TenantId,
 ): Promise<DeliveryZone[]> {
-  const result = await query<DeliveryZoneRow>(
+  const result = await tenantQuery<DeliveryZoneRow>(
+    tenantId,
     `SELECT id, neighborhood, fee_cents, active
        FROM delivery_zones
       WHERE tenant_id = $1
@@ -138,7 +141,8 @@ export async function createDeliveryZone(
   tenantId: TenantId,
   input: DeliveryZoneInput,
 ): Promise<DeliveryZone> {
-  const result = await query<DeliveryZoneRow>(
+  const result = await tenantQuery<DeliveryZoneRow>(
+    tenantId,
     `INSERT INTO delivery_zones (tenant_id, neighborhood, neighborhood_key, fee_cents, active)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, neighborhood, fee_cents, active`,
@@ -160,7 +164,8 @@ export async function updateDeliveryZone(
   id: number,
   input: DeliveryZoneInput,
 ): Promise<DeliveryZone | null> {
-  const result = await query<DeliveryZoneRow>(
+  const result = await tenantQuery<DeliveryZoneRow>(
+    tenantId,
     `UPDATE delivery_zones
         SET neighborhood = $3,
             neighborhood_key = $4,
@@ -185,7 +190,8 @@ export async function deleteDeliveryZone(
   tenantId: TenantId,
   id: number,
 ): Promise<boolean> {
-  const result = await query(
+  const result = await tenantQuery(
+    tenantId,
     `DELETE FROM delivery_zones WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id],
   );

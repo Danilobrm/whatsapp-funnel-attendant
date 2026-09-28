@@ -87,10 +87,11 @@ app.use("/api/store", requireAuth, storeRoutes);           // settings + /zones 
 
 ### Multi-tenancy — `tenantId` is ALWAYS the first repository argument
 
-- Every repository function and tenant-scoped service takes `tenantId: TenantId` first. Deliberate exceptions carry a comment: `findUserByEmail` (login precedes the tenant) and `findTenantByWhatsAppPhoneNumberId` (it is what discovers the tenant).
+- Every repository function and tenant-scoped service takes `tenantId: TenantId` first. Deliberate exceptions carry a comment: `findUserByEmail` (login precedes the tenant), `findUserById` (global PK, discovers the tenant), `findTenantById` (querying the `tenants` row by its own PK — no `tenant_id` column to check), and `findTenantByWhatsAppPhoneNumberId` (it is what discovers the tenant).
 - `TenantId` is a **branded** number, minted only via `asTenantId()` at trust boundaries (JWT verification, WhatsApp phone_number_id resolution, seed). Argument transposition becomes a compile error.
 - Tables with `tenant_id`: `tenants`, `users`, `bot_settings`, `conversations`, `messages`, `menu_categories`, `menu_items`, `item_sizes`, `option_groups`, `options`, `store_settings`, `delivery_zones`. Every FK is `ON DELETE CASCADE`.
 - `insertMessage` guards `conversationId` with `EXISTS (... AND tenant_id = $1)` so a foreign id is a no-op.
+- **`config/tenantQuery.ts` is the runtime backstop, not just a convention.** Every tenant-scoped repository call goes through `tenantQuery(tenantId, sql, params)` (outside a transaction) or `assertTenantScoped(tenantId, sql, params)` right before `client.query(...)` (inside `withTransaction`, see `modules/menu/menu.repository.ts`). Both throw before the query runs if the SQL text doesn't mention `tenant_id`, or if the first bound parameter isn't that exact `tenantId` — the two shapes a copy-paste bug takes. It does NOT verify the filter is semantically correct (right column, right place in the WHERE) — that is still the job of the isolation tests below.
 - Unit tests mock `query`; they prove the filter was typed, not that it isolates. Verify isolation end to end.
 
 ### Conversation flow (`modules/conversation/conversation.service.ts`)

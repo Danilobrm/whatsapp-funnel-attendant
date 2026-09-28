@@ -1,4 +1,4 @@
-import { query } from "../../config/db.js";
+import { tenantQuery } from "../../config/tenantQuery.js";
 
 import type { TenantId } from "../tenants/tenant.types.js";
 import type {
@@ -36,7 +36,8 @@ export async function upsertConversation(
   contact: string,
   contactName: string | null,
 ): Promise<ConversationRef> {
-  const result = await query<ConversationRow>(
+  const result = await tenantQuery<ConversationRow>(
+    tenantId,
     `WITH prev AS (
        SELECT last_message_at
          FROM conversations
@@ -70,7 +71,8 @@ export async function insertMessage(
   body: string,
   externalId: string | null,
 ): Promise<boolean> {
-  const result = await query<{ id: string }>(
+  const result = await tenantQuery<{ id: string }>(
+    tenantId,
     `INSERT INTO messages (tenant_id, conversation_id, direction, body, external_id)
      SELECT $1, $2, $3, $4, $5
       WHERE EXISTS (SELECT 1 FROM conversations WHERE id = $2 AND tenant_id = $1)
@@ -95,7 +97,8 @@ export async function findRecentMessages(
   conversationId: number,
   limit: number,
 ): Promise<HistoryMessage[]> {
-  const result = await query<MessageRow>(
+  const result = await tenantQuery<MessageRow>(
+    tenantId,
     `SELECT direction, body, created_at
        FROM (
          SELECT direction, body, created_at, id
@@ -125,7 +128,8 @@ export async function findMessagesByContact(
   contact: string,
   limit: number,
 ): Promise<HistoryMessage[]> {
-  const result = await query<{ id: number }>(
+  const result = await tenantQuery<{ id: number }>(
+    tenantId,
     `SELECT id FROM conversations
       WHERE tenant_id = $1 AND channel = $2 AND contact = $3`,
     [tenantId, channel, contact],
@@ -142,7 +146,8 @@ export async function deleteConversation(
   channel: Channel,
   contact: string,
 ): Promise<void> {
-  await query(
+  await tenantQuery(
+    tenantId,
     `DELETE FROM conversations
       WHERE tenant_id = $1 AND channel = $2 AND contact = $3`,
     [tenantId, channel, contact],

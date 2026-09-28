@@ -14,6 +14,11 @@ function toTenant(row: TenantRow): Tenant {
   return { id: asTenantId(row.id), slug: row.slug, name: row.name };
 }
 
+/**
+ * Não usa `tenantQuery`: esta é a tabela `tenants` em si — `id` já É o
+ * `tenant_id`, não existe coluna `tenant_id` pra filtrar contra. Não há o que
+ * vazar entre tenants numa busca pela própria chave primária deles.
+ */
 export async function findTenantById(
   tenantId: TenantId,
 ): Promise<Tenant | null> {

@@ -1,4 +1,4 @@
-import { query } from "../../config/db.js";
+import { tenantQuery } from "../../config/tenantQuery.js";
 
 import type { TenantId } from "../tenants/tenant.types.js";
 import type { BotSettings } from "./settings.types.js";
@@ -31,7 +31,8 @@ function toBotSettings(row: BotSettingsRow): BotSettings {
 export async function findBotSettings(
   tenantId: TenantId,
 ): Promise<BotSettings | null> {
-  const result = await query<BotSettingsRow>(
+  const result = await tenantQuery<BotSettingsRow>(
+    tenantId,
     `SELECT name, personality, gender, languages, updated_at
        FROM bot_settings
       WHERE tenant_id = $1`,
@@ -47,7 +48,8 @@ export async function saveBotSettings(
   tenantId: TenantId,
   settings: Omit<BotSettings, "updatedAt">,
 ): Promise<BotSettings> {
-  const result = await query<BotSettingsRow>(
+  const result = await tenantQuery<BotSettingsRow>(
+    tenantId,
     `INSERT INTO bot_settings (tenant_id, name, personality, gender, languages, updated_at)
      VALUES ($1, $2, $3, $4, $5::text[], CURRENT_TIMESTAMP)
      ON CONFLICT (tenant_id) DO UPDATE

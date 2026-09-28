@@ -1,6 +1,7 @@
-import { pool, query } from "../../config/db.js";
+import { pool } from "../../config/db.js";
+import { assertTenantScoped, tenantQuery } from "../../config/tenantQuery.js";
 
-import type { PoolClient } from "pg";
+import type { PoolClient, QueryResultRow } from "pg";
 import type { TenantId } from "../tenants/tenant.types.js";
 import type {
   ItemSize,
@@ -31,6 +32,23 @@ async function withTransaction<T>(
   }
 }
 
+/**
+ * `client.query()` tenant-scoped, para dentro de `withTransaction`.
+ * `tenantQuery()` não serve aqui porque ela chama o `query()` do pool, não a
+ * conexão presa da transação — mas a validação (`assertTenantScoped`) é a
+ * mesma rede de segurança contra query sem filtro de tenant ou com o
+ * `tenantId` errado.
+ */
+function clientTenantQuery<T extends QueryResultRow = QueryResultRow>(
+  client: PoolClient,
+  tenantId: TenantId,
+  sql: string,
+  params: unknown[],
+) {
+  assertTenantScoped(tenantId, sql, params);
+  return client.query<T>(sql, params as never[]);
+}
+
 // ---------------------------------------------------------------------------
 // Categorias
 // ---------------------------------------------------------------------------
@@ -47,7 +65,8 @@ function toCategory(row: CategoryRow): MenuCategory {
 }
 
 export async function listCategories(tenantId: TenantId): Promise<MenuCategory[]> {
-  const result = await query<CategoryRow>(
+  const result = await tenantQuery<CategoryRow>(
+    tenantId,
     `SELECT id, name, position, active
        FROM menu_categories
       WHERE tenant_id = $1
@@ -61,7 +80,8 @@ export async function createCategory(
   tenantId: TenantId,
   input: MenuCategoryInput,
 ): Promise<MenuCategory> {
-  const result = await query<CategoryRow>(
+  const result = await tenantQuery<CategoryRow>(
+    tenantId,
     `INSERT INTO menu_categories (tenant_id, name, position, active)
      VALUES ($1, $2, $3, $4)
      RETURNING id, name, position, active`,
@@ -77,7 +97,8 @@ export async function updateCategory(
   id: number,
   input: MenuCategoryInput,
 ): Promise<MenuCategory | null> {
-  const result = await query<CategoryRow>(
+  const result = await tenantQuery<CategoryRow>(
+    tenantId,
     `UPDATE menu_categories
         SET name = $3, position = $4, active = $5
       WHERE tenant_id = $1 AND id = $2
@@ -92,7 +113,8 @@ export async function deleteCategory(
   tenantId: TenantId,
   id: number,
 ): Promise<boolean> {
-  const result = await query(
+  const result = await tenantQuery(
+    tenantId,
     `DELETE FROM menu_categories WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id],
   );
@@ -105,7 +127,9 @@ export async function reorderCategories(
 ): Promise<void> {
   await withTransaction(async (client) => {
     for (const [index, id] of orderedIds.entries()) {
-      await client.query(
+      await clientTenantQuery(
+        client,
+        tenantId,
         `UPDATE menu_categories SET position = $3 WHERE tenant_id = $1 AND id = $2`,
         [tenantId, id, index],
       );
@@ -182,7 +206,9 @@ async function insertSizes(
   sizes: MenuItemInput["sizes"],
 ): Promise<void> {
   for (const [index, size] of sizes.entries()) {
-    await client.query(
+    await clientTenantQuery(
+      client,
+      tenantId,
       `INSERT INTO item_sizes (tenant_id, item_id, name, price_cents, position)
        VALUES ($1, $2, $3, $4, $5)`,
       [tenantId, itemId, size.name, size.priceCents, size.position ?? index],
@@ -197,7 +223,9 @@ async function insertOptionGroups(
   groups: MenuItemInput["optionGroups"],
 ): Promise<void> {
   for (const [index, group] of groups.entries()) {
-    const result = await client.query<{ id: number }>(
+    const result = await clientTenantQuery<{ id: number }>(
+      client,
+      tenantId,
       `INSERT INTO option_groups
           (tenant_id, item_id, name, min_select, max_select, pricing_rule, position)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -216,7 +244,9 @@ async function insertOptionGroups(
     if (groupId === undefined) throw new Error("Falha ao criar grupo de opções");
 
     for (const [optIndex, option] of group.options.entries()) {
-      await client.query(
+      await clientTenantQuery(
+        client,
+        tenantId,
         `INSERT INTO options (tenant_id, group_id, name, price_cents, available, position)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [
@@ -243,7 +273,8 @@ async function loadItemChildren(
   const groupsByItem = new Map<number, OptionGroup[]>();
   if (itemIds.length === 0) return { sizesByItem, groupsByItem };
 
-  const sizesResult = await query<SizeRow>(
+  const sizesResult = await tenantQuery<SizeRow>(
+    tenantId,
     `SELECT id, item_id, name, price_cents, position
        FROM item_sizes
       WHERE tenant_id = $1 AND item_id = ANY($2::int[])
@@ -256,7 +287,8 @@ async function loadItemChildren(
     sizesByItem.set(row.item_id, list);
   }
 
-  const groupsResult = await query<GroupRow>(
+  const groupsResult = await tenantQuery<GroupRow>(
+    tenantId,
     `SELECT id, item_id, name, min_select, max_select, pricing_rule, position
        FROM option_groups
       WHERE tenant_id = $1 AND item_id = ANY($2::int[])
@@ -267,7 +299,8 @@ async function loadItemChildren(
 
   const optionsByGroup = new Map<number, MenuOption[]>();
   if (groupIds.length > 0) {
-    const optionsResult = await query<OptionRow>(
+    const optionsResult = await tenantQuery<OptionRow>(
+      tenantId,
       `SELECT id, group_id, name, price_cents, available, position
          FROM options
         WHERE tenant_id = $1 AND group_id = ANY($2::int[])
@@ -323,7 +356,9 @@ export async function createItem(
   input: MenuItemInput,
 ): Promise<MenuItem> {
   return withTransaction(async (client) => {
-    const result = await client.query<ItemRow>(
+    const result = await clientTenantQuery<ItemRow>(
+      client,
+      tenantId,
       `INSERT INTO menu_items
           (tenant_id, category_id, name, description, price_cents, image_url,
            available, active, position)
@@ -364,7 +399,9 @@ async function loadItemChildrenInClient(
   tenantId: TenantId,
   itemId: number,
 ): Promise<{ sizesByItem: ItemSize[]; groupsByItem: OptionGroup[] }> {
-  const sizesResult = await client.query<SizeRow>(
+  const sizesResult = await clientTenantQuery<SizeRow>(
+    client,
+    tenantId,
     `SELECT id, item_id, name, price_cents, position
        FROM item_sizes
       WHERE tenant_id = $1 AND item_id = $2
@@ -372,7 +409,9 @@ async function loadItemChildrenInClient(
     [tenantId, itemId],
   );
 
-  const groupsResult = await client.query<GroupRow>(
+  const groupsResult = await clientTenantQuery<GroupRow>(
+    client,
+    tenantId,
     `SELECT id, item_id, name, min_select, max_select, pricing_rule, position
        FROM option_groups
       WHERE tenant_id = $1 AND item_id = $2
@@ -382,7 +421,9 @@ async function loadItemChildrenInClient(
 
   const groups: OptionGroup[] = [];
   for (const g of groupsResult.rows) {
-    const optionsResult = await client.query<OptionRow>(
+    const optionsResult = await clientTenantQuery<OptionRow>(
+      client,
+      tenantId,
       `SELECT id, group_id, name, price_cents, available, position
          FROM options
         WHERE tenant_id = $1 AND group_id = $2
@@ -409,7 +450,9 @@ export async function updateItem(
   input: MenuItemInput,
 ): Promise<MenuItem | null> {
   return withTransaction(async (client) => {
-    const result = await client.query<ItemRow>(
+    const result = await clientTenantQuery<ItemRow>(
+      client,
+      tenantId,
       `UPDATE menu_items
           SET category_id = $3, name = $4, description = $5, price_cents = $6,
               image_url = $7, available = $8, active = $9, position = $10
@@ -434,11 +477,15 @@ export async function updateItem(
 
     // Substitui tamanhos e grupos de opções por inteiro: mais simples e
     // confiável do que diff granular, e o drawer sempre envia a lista completa.
-    await client.query(
+    await clientTenantQuery(
+      client,
+      tenantId,
       `DELETE FROM item_sizes WHERE tenant_id = $1 AND item_id = $2`,
       [tenantId, id],
     );
-    await client.query(
+    await clientTenantQuery(
+      client,
+      tenantId,
       `DELETE FROM option_groups WHERE tenant_id = $1 AND item_id = $2`,
       [tenantId, id],
     );
@@ -457,7 +504,8 @@ export async function updateItem(
 }
 
 export async function deleteItem(tenantId: TenantId, id: number): Promise<boolean> {
-  const result = await query(
+  const result = await tenantQuery(
+    tenantId,
     `DELETE FROM menu_items WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id],
   );
@@ -469,7 +517,8 @@ export async function updateItemAvailability(
   id: number,
   available: boolean,
 ): Promise<boolean> {
-  const result = await query(
+  const result = await tenantQuery(
+    tenantId,
     `UPDATE menu_items SET available = $3 WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id, available],
   );
@@ -482,7 +531,9 @@ export async function reorderItems(
 ): Promise<void> {
   await withTransaction(async (client) => {
     for (const [index, id] of orderedIds.entries()) {
-      await client.query(
+      await clientTenantQuery(
+        client,
+        tenantId,
         `UPDATE menu_items SET position = $3 WHERE tenant_id = $1 AND id = $2`,
         [tenantId, id, index],
       );
@@ -495,7 +546,8 @@ export async function reorderItems(
 // ---------------------------------------------------------------------------
 
 async function loadMenu(tenantId: TenantId, onlyActive: boolean): Promise<Menu> {
-  const categoriesResult = await query<CategoryRow>(
+  const categoriesResult = await tenantQuery<CategoryRow>(
+    tenantId,
     `SELECT id, name, position, active
        FROM menu_categories
       WHERE tenant_id = $1 ${onlyActive ? "AND active = true" : ""}
@@ -503,7 +555,8 @@ async function loadMenu(tenantId: TenantId, onlyActive: boolean): Promise<Menu> 
     [tenantId],
   );
 
-  const itemsResult = await query<ItemRow>(
+  const itemsResult = await tenantQuery<ItemRow>(
+    tenantId,
     `SELECT id, category_id, name, description, price_cents, image_url,
             available, active, position
        FROM menu_items

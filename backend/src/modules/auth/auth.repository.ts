@@ -56,6 +56,11 @@ export async function findUserByEmail(
   return row ? toStoredUser(row) : null;
 }
 
+/**
+ * Não usa `tenantQuery`: `userId` já é globalmente único (`users.id`), e é
+ * exatamente esta consulta que devolve a qual tenant aquele usuário pertence
+ * — não há `tenantId` prévio pra validar contra.
+ */
 export async function findUserById(userId: number): Promise<StoredUser | null> {
   const result = await query<UserRow>(`${SELECT_USER} WHERE u.id = $1`, [
     userId,
