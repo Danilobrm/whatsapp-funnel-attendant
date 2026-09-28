@@ -4,17 +4,17 @@
  */
 export function formatBRL(cents: number): string {
   // `Intl` separa "R$" do valor com um espaço não separável (U+00A0 ou
-  // U+202F, dependendo da versão de ICU), que quebra comparação exata em
-  // teste — normaliza pro espaço comum (U+0020).
+  // U+202F, dependendo da versao de ICU), que quebra comparacao exata em
+  // teste — normaliza pro espaco comum (U+0020).
   return (cents / 100)
     .toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-    .replace(/[  ]/g, ' ');
+    .replace(/[\u00A0\u202F]/g, ' ');
 }
 
 /**
- * Lê o texto de um `<input>` de dinheiro em pt-BR ("R$ 45,50", "1.234,56") e
- * devolve centavos inteiros. Ponto é separador de milhar, vírgula é decimal
- * — a mesma convenção de `formatBRL`. `null` quando não dá pra interpretar.
+ * Le o texto de um `<input>` de dinheiro em pt-BR ("R$ 45,50", "1.234,56") e
+ * devolve centavos inteiros. Ponto e separador de milhar, virgula e decimal
+ * — a mesma convencao de `formatBRL`. `null` quando nao da pra interpretar.
  */
 export function parseBRLInput(text: string): number | null {
   const cleaned = text.replace(/[^0-9,]/g, '');
