@@ -1,42 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
-import {
-  intervalSegments,
-  labelToMinutes,
-  minutesToLabel,
-  minutesToPercent,
-  positionToMinutes,
-  positionToMinutesWrapped,
-  wrapMinutes,
-} from '../../../lib/timeSlots.ts';
+import { minutesToLabel, labelToMinutes, snapToStep } from '../../../lib/timeSlots.ts';
 import { DAY_KEYS, type DayInterval, type DayKey, type OpeningHours } from '../../../api/store';
 import { useT } from '../../../i18n/index.tsx';
 
 const ROW_PX = 32;
-/**
- * A grade começa às 10h, não à meia-noite — é quando o dia de um restaurante
- * de fato começa. As 24 linhas seguem em ordem rotacionada (10h..23h, 0h..9h)
- * e "dão a volta": todo cálculo de posição converte pra este referencial
- * ("rotacionado", 0 = 10:00) e de volta pro horário real via
- * `toRotated`/`fromRotated`, sem duplicar a lógica de cruzar meia-noite — ela
- * já existe em `wrapMinutes`, só com outro ponto de partida.
- */
-const DAY_START_MINUTES = 10 * 60;
-const HOURS = Array.from({ length: 24 }, (_, i) => (i + 10) % 24);
+/** Janela editável: 10:00 até meia-noite. Fora disso a grade não vai — não é um restaurante de madrugada. */
+const WINDOW_START_MINUTES = 10 * 60;
+const WINDOW_END_MINUTES = 24 * 60;
+const WINDOW_MINUTES = WINDOW_END_MINUTES - WINDOW_START_MINUTES;
+const HOURS = Array.from({ length: WINDOW_MINUTES / 60 }, (_, i) => 10 + i);
 const DEFAULT_INTERVAL: DayInterval = ['11:00', '15:00'];
 /** Abaixo disso, um "arraste" pra criar é tratado como clique acidental. */
 const MIN_CREATE_MINUTES = 30;
-
-/** Minutos reais (0 = meia-noite) → minutos na grade (0 = 10:00). */
-function toRotated(minutes: number): number {
-  return wrapMinutes(minutes - DAY_START_MINUTES);
-}
-
-/** Minutos na grade (0 = 10:00) → minutos reais (0 = meia-noite). */
-function fromRotated(minutes: number): number {
-  return wrapMinutes(minutes + DAY_START_MINUTES);
-}
 
 interface WeekHoursGridProps {
   value: OpeningHours;
@@ -47,17 +24,26 @@ interface WeekHoursGridProps {
 type Edge = 'start' | 'end';
 
 type Interaction =
-  | { kind: 'create'; day: DayKey; anchorMinutes: number; currentMinutes: number }
-  | {
-      kind: 'move';
-      day: DayKey;
-      index: number;
-      anchorMinutes: number;
-      startMinutes: number;
-      endMinutes: number;
-    }
+  | { kind: 'create'; day: DayKey; anchorWindow: number; currentWindow: number }
+  | { kind: 'move'; day: DayKey; index: number; anchorWindow: number; startWindow: number; endWindow: number }
   | { kind: 'resize'; day: DayKey; index: number; edge: Edge }
   | null;
+
+/**
+ * Minutos reais (0 = meia-noite) → minutos na janela (0 = 10:00, 840 =
+ * meia-noite). "00:00" chega como 0 — o mesmo valor que `minutesToLabel`
+ * usa pro FIM do dia — então aqui ele é tratado como o fim da janela (840),
+ * não o início (que ficaria fora da faixa editável e seria grampeado a 0).
+ */
+function toWindow(absoluteMinutes: number): number {
+  const effective = absoluteMinutes === 0 ? WINDOW_END_MINUTES : absoluteMinutes;
+  return Math.min(WINDOW_MINUTES, Math.max(0, effective - WINDOW_START_MINUTES));
+}
+
+/** Minutos na janela → minutos reais. `minutesToLabel` já dobra 1440 pra "00:00". */
+function fromWindow(windowMinutes: number): number {
+  return WINDOW_START_MINUTES + windowMinutes;
+}
 
 export function WeekHoursGridSkeleton() {
   return (
@@ -91,8 +77,8 @@ export default function WeekHoursGrid({
     onChange(next);
   }
 
-  function patchEdge(day: DayKey, index: number, edge: Edge, minutes: number) {
-    const label = minutesToLabel(minutes);
+  function patchEdge(day: DayKey, index: number, edge: Edge, windowMinutes: number) {
+    const label = minutesToLabel(fromWindow(windowMinutes));
     const next = intervalsFor(day).map((interval, i) => {
       if (i !== index) return interval;
       return edge === 'start'
@@ -102,21 +88,12 @@ export default function WeekHoursGrid({
     setIntervals(day, next);
   }
 
-  /** Minutos reais sob o ponteiro — a "borda" do arraste é o topo/base da grade (10:00). */
-  function minutesAt(clientY: number, wrap = false): number {
+  /** Posição do ponteiro → minutos NA JANELA (0..840), grampeado nas bordas da grade. */
+  function windowAt(clientY: number): number {
     const rect = gridRef.current?.getBoundingClientRect();
-    if (!rect) return fromRotated(0);
-    const rotated = wrap
-      ? positionToMinutesWrapped(clientY, rect.top, rect.height)
-      : positionToMinutes(clientY, rect.top, rect.height);
-    return fromRotated(rotated);
-  }
-
-  /** Minutos NA GRADE (0 = 10:00) sob o ponteiro — usado só pela pré-visualização de criação. */
-  function rotatedMinutesAt(clientY: number): number {
-    const rect = gridRef.current?.getBoundingClientRect();
-    if (!rect) return 0;
-    return positionToMinutes(clientY, rect.top, rect.height);
+    if (!rect || rect.height <= 0) return 0;
+    const ratio = Math.min(1, Math.max(0, (clientY - rect.top) / rect.height));
+    return snapToStep(ratio * WINDOW_MINUTES);
   }
 
   useEffect(() => {
@@ -126,19 +103,16 @@ export default function WeekHoursGrid({
       if (!interaction) return;
 
       if (interaction.kind === 'create') {
-        const currentMinutes = rotatedMinutesAt(event.clientY);
-        setInteraction({ ...interaction, currentMinutes });
+        setInteraction({ ...interaction, currentWindow: windowAt(event.clientY) });
       } else if (interaction.kind === 'resize') {
-        const minutes = minutesAt(event.clientY, interaction.edge === 'end');
-        patchEdge(interaction.day, interaction.index, interaction.edge, minutes);
+        patchEdge(interaction.day, interaction.index, interaction.edge, windowAt(event.clientY));
       } else if (interaction.kind === 'move') {
-        const current = minutesAt(event.clientY);
-        const delta = current - interaction.anchorMinutes;
-        const newStart = wrapMinutes(interaction.startMinutes + delta);
-        const newEnd = wrapMinutes(interaction.endMinutes + delta);
+        const delta = windowAt(event.clientY) - interaction.anchorWindow;
+        const newStart = Math.min(WINDOW_MINUTES, Math.max(0, interaction.startWindow + delta));
+        const newEnd = Math.min(WINDOW_MINUTES, Math.max(0, interaction.endWindow + delta));
         const next = intervalsFor(interaction.day).map((iv, i) =>
           i === interaction.index
-            ? ([minutesToLabel(newStart), minutesToLabel(newEnd)] as DayInterval)
+            ? ([minutesToLabel(fromWindow(newStart)), minutesToLabel(fromWindow(newEnd))] as DayInterval)
             : iv,
         );
         setIntervals(interaction.day, next);
@@ -148,13 +122,13 @@ export default function WeekHoursGrid({
     function onUp(event: MouseEvent) {
       if (!interaction) return;
       if (interaction.kind === 'create') {
-        const end = rotatedMinutesAt(event.clientY);
-        const start = Math.min(interaction.anchorMinutes, end);
-        const finish = Math.max(interaction.anchorMinutes, end);
+        const end = windowAt(event.clientY);
+        const start = Math.min(interaction.anchorWindow, end);
+        const finish = Math.max(interaction.anchorWindow, end);
         if (finish - start >= MIN_CREATE_MINUTES) {
           setIntervals(interaction.day, [
             ...intervalsFor(interaction.day),
-            [minutesToLabel(fromRotated(start)), minutesToLabel(fromRotated(finish))],
+            [minutesToLabel(fromWindow(start)), minutesToLabel(fromWindow(finish))],
           ]);
         }
       }
@@ -174,18 +148,17 @@ export default function WeekHoursGrid({
     if (disabled) return;
     const interval = intervalsFor(day)[index];
     if (!interval) return;
-    const current = labelToMinutes(interval[edge === 'start' ? 0 : 1]);
+    const current = toWindow(labelToMinutes(interval[edge === 'start' ? 0 : 1]));
 
     let next: number | null = null;
     if (event.key === 'ArrowUp') next = current - 15;
     else if (event.key === 'ArrowDown') next = current + 15;
-    else if (event.key === 'Home') next = fromRotated(0);
-    else if (event.key === 'End') next = fromRotated(1440);
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = WINDOW_MINUTES;
     if (next === null) return;
 
     event.preventDefault();
-    const minutes = edge === 'end' ? wrapMinutes(next) : Math.min(1440, Math.max(0, next));
-    patchEdge(day, index, edge, minutes);
+    patchEdge(day, index, edge, Math.min(WINDOW_MINUTES, Math.max(0, next)));
   }
 
   function removeInterval(day: DayKey, index: number) {
@@ -258,73 +231,70 @@ export default function WeekHoursGrid({
                 className="relative border-l border-line first:border-l-0"
                 onMouseDown={(event) => {
                   if (disabled || event.target !== event.currentTarget) return;
-                  const minutes = rotatedMinutesAt(event.clientY);
-                  setInteraction({ kind: 'create', day, anchorMinutes: minutes, currentMinutes: minutes });
+                  const w = windowAt(event.clientY);
+                  setInteraction({ kind: 'create', day, anchorWindow: w, currentWindow: w });
                 }}
               >
                 {intervalsFor(day).map((interval, index) => {
-                  const start = labelToMinutes(interval[0]);
-                  const end = labelToMinutes(interval[1]);
-                  const segments = intervalSegments(toRotated(start), toRotated(end));
+                  const startW = toWindow(labelToMinutes(interval[0]));
+                  const endW = toWindow(labelToMinutes(interval[1]));
 
-                  return segments.map((segment, segIndex) => (
+                  return (
                     <div
-                      key={segIndex}
-                      data-testid={`block-${day}-${index}-${segIndex}`}
+                      key={index}
+                      data-testid={`block-${day}-${index}`}
                       onMouseDown={(event) => {
                         if (disabled) return;
                         event.stopPropagation();
-                        const minutes = minutesAt(event.clientY);
                         setInteraction({
                           kind: 'move',
                           day,
                           index,
-                          anchorMinutes: minutes,
-                          startMinutes: start,
-                          endMinutes: end,
+                          anchorWindow: windowAt(event.clientY),
+                          startWindow: startW,
+                          endWindow: endW,
                         });
                       }}
                       className="absolute inset-x-1 cursor-grab rounded-md border border-accent/40 bg-accent/20 active:cursor-grabbing"
-                      style={{ top: `${segment.left}%`, height: `${segment.width}%` }}
+                      style={{
+                        top: `${(startW / WINDOW_MINUTES) * 100}%`,
+                        height: `${((endW - startW) / WINDOW_MINUTES) * 100}%`,
+                      }}
                     >
-                      {segIndex === 0 && (
-                        <div
-                          role="slider"
-                          tabIndex={disabled ? -1 : 0}
-                          aria-label={`${t(`store.hours.days.${day}`)} — ${t('store.hours.start')} (${index + 1})`}
-                          aria-valuemin={0}
-                          aria-valuemax={1440}
-                          aria-valuenow={start}
-                          aria-valuetext={minutesToLabel(start)}
-                          data-testid={`handle-${day}-${index}-start`}
-                          onMouseDown={(event) => {
-                            if (disabled) return;
-                            event.stopPropagation();
-                            setInteraction({ kind: 'resize', day, index, edge: 'start' });
-                          }}
-                          onKeyDown={(event) => handleKeyDown(event, day, index, 'start')}
-                          className="absolute inset-x-0 -top-1 h-2 cursor-ns-resize focus:outline-none focus:ring-2 focus:ring-accent"
-                        />
-                      )}
-                      {segIndex === segments.length - 1 && (
-                        <div
-                          role="slider"
-                          tabIndex={disabled ? -1 : 0}
-                          aria-label={`${t(`store.hours.days.${day}`)} — ${t('store.hours.end')} (${index + 1})`}
-                          aria-valuemin={0}
-                          aria-valuemax={1440}
-                          aria-valuenow={end}
-                          aria-valuetext={minutesToLabel(end)}
-                          data-testid={`handle-${day}-${index}-end`}
-                          onMouseDown={(event) => {
-                            if (disabled) return;
-                            event.stopPropagation();
-                            setInteraction({ kind: 'resize', day, index, edge: 'end' });
-                          }}
-                          onKeyDown={(event) => handleKeyDown(event, day, index, 'end')}
-                          className="absolute inset-x-0 -bottom-1 h-2 cursor-ns-resize focus:outline-none focus:ring-2 focus:ring-accent"
-                        />
-                      )}
+                      <div
+                        role="slider"
+                        tabIndex={disabled ? -1 : 0}
+                        aria-label={`${t(`store.hours.days.${day}`)} — ${t('store.hours.start')} (${index + 1})`}
+                        aria-valuemin={0}
+                        aria-valuemax={WINDOW_MINUTES}
+                        aria-valuenow={startW}
+                        aria-valuetext={minutesToLabel(fromWindow(startW))}
+                        data-testid={`handle-${day}-${index}-start`}
+                        onMouseDown={(event) => {
+                          if (disabled) return;
+                          event.stopPropagation();
+                          setInteraction({ kind: 'resize', day, index, edge: 'start' });
+                        }}
+                        onKeyDown={(event) => handleKeyDown(event, day, index, 'start')}
+                        className="absolute inset-x-0 -top-1 h-2 cursor-ns-resize focus:outline-none focus:ring-2 focus:ring-accent"
+                      />
+                      <div
+                        role="slider"
+                        tabIndex={disabled ? -1 : 0}
+                        aria-label={`${t(`store.hours.days.${day}`)} — ${t('store.hours.end')} (${index + 1})`}
+                        aria-valuemin={0}
+                        aria-valuemax={WINDOW_MINUTES}
+                        aria-valuenow={endW}
+                        aria-valuetext={minutesToLabel(fromWindow(endW))}
+                        data-testid={`handle-${day}-${index}-end`}
+                        onMouseDown={(event) => {
+                          if (disabled) return;
+                          event.stopPropagation();
+                          setInteraction({ kind: 'resize', day, index, edge: 'end' });
+                        }}
+                        onKeyDown={(event) => handleKeyDown(event, day, index, 'end')}
+                        className="absolute inset-x-0 -bottom-1 h-2 cursor-ns-resize focus:outline-none focus:ring-2 focus:ring-accent"
+                      />
                       <button
                         type="button"
                         onMouseDown={(event) => event.stopPropagation()}
@@ -335,23 +305,24 @@ export default function WeekHoursGrid({
                       >
                         <X className="h-2.5 w-2.5" strokeWidth={2.5} />
                       </button>
-                      {segIndex === 0 && (
-                        <span className="pointer-events-none absolute inset-x-1 top-3 truncate text-[10px] leading-tight text-fg-muted">
-                          {interval[0]}–{interval[1]}
-                        </span>
-                      )}
+                      <span className="pointer-events-none absolute inset-x-1 top-3 truncate text-[10px] leading-tight text-fg-muted">
+                        {interval[0]}–{interval[1]}
+                      </span>
                     </div>
-                  ));
+                  );
                 })}
 
                 {interaction?.kind === 'create' && interaction.day === day && (() => {
-                  const s = Math.min(interaction.anchorMinutes, interaction.currentMinutes);
-                  const e = Math.max(interaction.anchorMinutes, interaction.currentMinutes);
+                  const s = Math.min(interaction.anchorWindow, interaction.currentWindow);
+                  const e = Math.max(interaction.anchorWindow, interaction.currentWindow);
                   return (
                     <div
                       aria-hidden="true"
                       className="pointer-events-none absolute inset-x-1 rounded-md border border-accent bg-accent/30"
-                      style={{ top: `${minutesToPercent(s)}%`, height: `${minutesToPercent(e - s)}%` }}
+                      style={{
+                        top: `${(s / WINDOW_MINUTES) * 100}%`,
+                        height: `${((e - s) / WINDOW_MINUTES) * 100}%`,
+                      }}
                     />
                   );
                 })()}

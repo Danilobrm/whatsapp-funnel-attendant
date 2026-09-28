@@ -5,23 +5,23 @@ import { fireEvent, renderWithProviders, screen } from '../../../test/render.tsx
 import WeekHoursGrid from './WeekHoursGrid.tsx';
 
 /**
- * A grade começa às 10h (ver `DAY_START_MINUTES` no componente), não à meia-
- * noite — pixel 0 é 10:00 real. Com a trilha mockada em 1440px (1px/min),
- * `realY(11, 0)` devolve o `clientY` cujo horário REAL é 11:00.
+ * A grade só cobre 10:00–24:00 (ver `WINDOW_START_MINUTES` no componente).
+ * Trilha mockada em 840px = 1px por minuto DA JANELA, então `realY(11, 0)`
+ * devolve o `clientY` cujo horário REAL é 11:00 (= 60px, pois 11:00 é 60min
+ * depois do início da janela, 10:00).
  */
 function realY(hour: number, minute = 0): number {
-  return (((hour * 60 + minute - 10 * 60) % 1440) + 1440) % 1440;
+  return hour * 60 + minute - 10 * 60;
 }
 
-/** Trilha de 1440px = 1px por minuto, sem arredondamento pra facilitar as contas do teste. */
 function mockGridRect() {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
     left: 0,
     right: 300,
     width: 300,
     top: 0,
-    bottom: 1440,
-    height: 1440,
+    bottom: 840,
+    height: 840,
     x: 0,
     y: 0,
     toJSON: () => '',
@@ -48,23 +48,19 @@ describe('WeekHoursGrid — layout', () => {
     expect(screen.getByText('11:00–15:00')).toBeInTheDocument();
   });
 
-  it('um intervalo cruzando o início da grade (10:00) vira dois blocos', () => {
-    // A grade começa às 10:00 — 22:00–02:00 não cruza mais essa borda (fica
-    // como um bloco contínuo, já que a meia-noite real agora é "meio da grade").
-    // Quem cruza é um intervalo que atravessa as 10:00, como 08:00–12:00.
-    renderWithProviders(
-      <WeekHoursGrid value={{ sat: [['08:00', '12:00']] }} onChange={vi.fn()} />,
-    );
-    expect(screen.getByTestId('block-sat-0-0')).toBeInTheDocument();
-    expect(screen.getByTestId('block-sat-0-1')).toBeInTheDocument();
+  it('a janela vai de 10:00 até 23:00 (não mostra madrugada)', () => {
+    renderWithProviders(<WeekHoursGrid value={{}} onChange={vi.fn()} />);
+    expect(screen.getByText('10:00')).toBeInTheDocument();
+    expect(screen.getByText('23:00')).toBeInTheDocument();
+    expect(screen.queryByText('9:00')).not.toBeInTheDocument();
+    expect(screen.queryByText('0:00')).not.toBeInTheDocument();
   });
 
-  it('um intervalo que cruza a meia-noite real fica como um bloco só', () => {
+  it('um intervalo terminando exatamente à meia-noite fica um bloco só, encostado na base', () => {
     renderWithProviders(
-      <WeekHoursGrid value={{ sat: [['22:00', '02:00']] }} onChange={vi.fn()} />,
+      <WeekHoursGrid value={{ sat: [['18:00', '00:00']] }} onChange={vi.fn()} />,
     );
-    expect(screen.getByTestId('block-sat-0-0')).toBeInTheDocument();
-    expect(screen.queryByTestId('block-sat-0-1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('block-sat-0')).toBeInTheDocument();
   });
 });
 
@@ -93,7 +89,19 @@ describe('WeekHoursGrid — teclado', () => {
     expect(onChange).toHaveBeenCalledWith({ mon: [['11:00', '15:15']] });
   });
 
-  it('End no handle de fim vai pra borda da grade (10:00)', async () => {
+  it('Home no handle de início vai pro topo da grade (10:00)', async () => {
+    const onChange = vi.fn();
+    renderWithProviders(
+      <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={onChange} />,
+    );
+
+    screen.getByTestId('handle-mon-0-start').focus();
+    await userEvent.keyboard('{Home}');
+
+    expect(onChange).toHaveBeenCalledWith({ mon: [['10:00', '15:00']] });
+  });
+
+  it('End no handle de fim vai pra base da grade (00:00)', async () => {
     const onChange = vi.fn();
     renderWithProviders(
       <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={onChange} />,
@@ -102,7 +110,7 @@ describe('WeekHoursGrid — teclado', () => {
     screen.getByTestId('handle-mon-0-end').focus();
     await userEvent.keyboard('{End}');
 
-    expect(onChange).toHaveBeenCalledWith({ mon: [['11:00', '10:00']] });
+    expect(onChange).toHaveBeenCalledWith({ mon: [['11:00', '00:00']] });
   });
 
   it('não reage ao teclado quando desabilitado', async () => {
@@ -173,7 +181,7 @@ describe('WeekHoursGrid — arrastar', () => {
       <WeekHoursGrid value={{ fri: [['11:00', '15:00']] }} onChange={onChange} />,
     );
 
-    const block = screen.getByTestId('block-fri-0-0');
+    const block = screen.getByTestId('block-fri-0');
     fireEvent.mouseDown(block, { clientY: realY(11) });
     fireEvent.mouseMove(window, { clientY: realY(12) });
     fireEvent.mouseUp(window, { clientY: realY(12) });
@@ -194,5 +202,20 @@ describe('WeekHoursGrid — arrastar', () => {
     fireEvent.mouseUp(window, { clientY: realY(10) });
 
     expect(onChange).toHaveBeenCalledWith({ fri: [['10:00', '15:00']] });
+  });
+
+  it('arrastar o handle de fim até a base fecha exatamente à meia-noite', () => {
+    mockGridRect();
+    const onChange = vi.fn();
+    renderWithProviders(
+      <WeekHoursGrid value={{ fri: [['11:00', '15:00']] }} onChange={onChange} />,
+    );
+
+    const handle = screen.getByTestId('handle-fri-0-end');
+    fireEvent.mouseDown(handle);
+    fireEvent.mouseMove(window, { clientY: 900 });
+    fireEvent.mouseUp(window, { clientY: 900 });
+
+    expect(onChange).toHaveBeenCalledWith({ fri: [['11:00', '00:00']] });
   });
 });
