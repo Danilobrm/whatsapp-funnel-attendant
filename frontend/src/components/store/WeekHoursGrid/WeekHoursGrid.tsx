@@ -14,10 +14,29 @@ import { DAY_KEYS, type DayInterval, type DayKey, type OpeningHours } from '../.
 import { useT } from '../../../i18n/index.tsx';
 
 const ROW_PX = 32;
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
+/**
+ * A grade começa às 10h, não à meia-noite — é quando o dia de um restaurante
+ * de fato começa. As 24 linhas seguem em ordem rotacionada (10h..23h, 0h..9h)
+ * e "dão a volta": todo cálculo de posição converte pra este referencial
+ * ("rotacionado", 0 = 10:00) e de volta pro horário real via
+ * `toRotated`/`fromRotated`, sem duplicar a lógica de cruzar meia-noite — ela
+ * já existe em `wrapMinutes`, só com outro ponto de partida.
+ */
+const DAY_START_MINUTES = 10 * 60;
+const HOURS = Array.from({ length: 24 }, (_, i) => (i + 10) % 24);
 const DEFAULT_INTERVAL: DayInterval = ['11:00', '15:00'];
 /** Abaixo disso, um "arraste" pra criar é tratado como clique acidental. */
 const MIN_CREATE_MINUTES = 30;
+
+/** Minutos reais (0 = meia-noite) → minutos na grade (0 = 10:00). */
+function toRotated(minutes: number): number {
+  return wrapMinutes(minutes - DAY_START_MINUTES);
+}
+
+/** Minutos na grade (0 = 10:00) → minutos reais (0 = meia-noite). */
+function fromRotated(minutes: number): number {
+  return wrapMinutes(minutes + DAY_START_MINUTES);
+}
 
 interface WeekHoursGridProps {
   value: OpeningHours;
@@ -83,12 +102,21 @@ export default function WeekHoursGrid({
     setIntervals(day, next);
   }
 
+  /** Minutos reais sob o ponteiro — a "borda" do arraste é o topo/base da grade (10:00). */
   function minutesAt(clientY: number, wrap = false): number {
     const rect = gridRef.current?.getBoundingClientRect();
-    if (!rect) return 0;
-    return wrap
+    if (!rect) return fromRotated(0);
+    const rotated = wrap
       ? positionToMinutesWrapped(clientY, rect.top, rect.height)
       : positionToMinutes(clientY, rect.top, rect.height);
+    return fromRotated(rotated);
+  }
+
+  /** Minutos NA GRADE (0 = 10:00) sob o ponteiro — usado só pela pré-visualização de criação. */
+  function rotatedMinutesAt(clientY: number): number {
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (!rect) return 0;
+    return positionToMinutes(clientY, rect.top, rect.height);
   }
 
   useEffect(() => {
@@ -98,7 +126,7 @@ export default function WeekHoursGrid({
       if (!interaction) return;
 
       if (interaction.kind === 'create') {
-        const currentMinutes = minutesAt(event.clientY);
+        const currentMinutes = rotatedMinutesAt(event.clientY);
         setInteraction({ ...interaction, currentMinutes });
       } else if (interaction.kind === 'resize') {
         const minutes = minutesAt(event.clientY, interaction.edge === 'end');
@@ -120,13 +148,13 @@ export default function WeekHoursGrid({
     function onUp(event: MouseEvent) {
       if (!interaction) return;
       if (interaction.kind === 'create') {
-        const end = minutesAt(event.clientY);
+        const end = rotatedMinutesAt(event.clientY);
         const start = Math.min(interaction.anchorMinutes, end);
         const finish = Math.max(interaction.anchorMinutes, end);
         if (finish - start >= MIN_CREATE_MINUTES) {
           setIntervals(interaction.day, [
             ...intervalsFor(interaction.day),
-            [minutesToLabel(start), minutesToLabel(finish)],
+            [minutesToLabel(fromRotated(start)), minutesToLabel(fromRotated(finish))],
           ]);
         }
       }
@@ -151,8 +179,8 @@ export default function WeekHoursGrid({
     let next: number | null = null;
     if (event.key === 'ArrowUp') next = current - 15;
     else if (event.key === 'ArrowDown') next = current + 15;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = 1440;
+    else if (event.key === 'Home') next = fromRotated(0);
+    else if (event.key === 'End') next = fromRotated(1440);
     if (next === null) return;
 
     event.preventDefault();
@@ -197,11 +225,11 @@ export default function WeekHoursGrid({
 
       <div className="flex">
         <div className="relative w-12 flex-none" style={{ height: HOURS.length * ROW_PX }}>
-          {HOURS.map((hour) => (
+          {HOURS.map((hour, index) => (
             <span
               key={hour}
               className="absolute right-1.5 -translate-y-1/2 text-[11px] text-fg-subtle"
-              style={{ top: hour * ROW_PX }}
+              style={{ top: index * ROW_PX }}
             >
               {hour}:00
             </span>
@@ -213,12 +241,12 @@ export default function WeekHoursGrid({
           className="relative flex-1"
           style={{ height: HOURS.length * ROW_PX }}
         >
-          {HOURS.map((hour) => (
+          {HOURS.map((hour, index) => (
             <div
               key={hour}
               aria-hidden="true"
               className="absolute inset-x-0 border-t border-line"
-              style={{ top: hour * ROW_PX }}
+              style={{ top: index * ROW_PX }}
             />
           ))}
 
@@ -230,14 +258,14 @@ export default function WeekHoursGrid({
                 className="relative border-l border-line first:border-l-0"
                 onMouseDown={(event) => {
                   if (disabled || event.target !== event.currentTarget) return;
-                  const minutes = minutesAt(event.clientY);
+                  const minutes = rotatedMinutesAt(event.clientY);
                   setInteraction({ kind: 'create', day, anchorMinutes: minutes, currentMinutes: minutes });
                 }}
               >
                 {intervalsFor(day).map((interval, index) => {
                   const start = labelToMinutes(interval[0]);
                   const end = labelToMinutes(interval[1]);
-                  const segments = intervalSegments(start, end);
+                  const segments = intervalSegments(toRotated(start), toRotated(end));
 
                   return segments.map((segment, segIndex) => (
                     <div
