@@ -28,6 +28,24 @@ function renderDrawer(overrides: Partial<Parameters<typeof ItemDrawer>[0]> = {})
   return { onSave, onClose };
 }
 
+describe('ItemDrawer — categoria (Dropdown)', () => {
+  it('troca de categoria pelo dropdown e salva com o id certo', async () => {
+    const { onSave } = renderDrawer();
+
+    await userEvent.type(screen.getByLabelText('Nome'), 'Guaraná');
+    await userEvent.type(screen.getByLabelText('Preço'), '6,00');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Categoria' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Bebidas' }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ categoryId: 2 }),
+    );
+  });
+});
+
 describe('ItemDrawer — creating an item', () => {
   it('saves with a single price by default', async () => {
     const { onSave } = renderDrawer();
@@ -89,6 +107,26 @@ describe('ItemDrawer — creating an item', () => {
             ],
           }),
         ],
+      }),
+    );
+  });
+
+  it('troca a cobrança do grupo pra "average" pelo dropdown (meio a meio)', async () => {
+    const { onSave } = renderDrawer();
+
+    await userEvent.type(screen.getByLabelText('Nome'), 'Pizza Meio a Meio');
+    await userEvent.type(screen.getByLabelText('Preço'), '58,00');
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar grupo' }));
+    await userEvent.type(screen.getByLabelText('Nome do grupo'), 'Sabores');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cobrança' }));
+    await userEvent.click(screen.getByRole('option', { name: /média/i }));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        optionGroups: [expect.objectContaining({ pricingRule: 'average' })],
       }),
     );
   });

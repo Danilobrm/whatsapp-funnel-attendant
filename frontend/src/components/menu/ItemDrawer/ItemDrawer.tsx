@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 
 import { parseBRLInput } from '../../../lib/money.ts';
+import Dropdown from '../../Dropdown';
 import ItemImage from '../ItemImage';
 import { useT } from '../../../i18n/index.tsx';
 
@@ -256,18 +257,13 @@ export default function ItemDrawer({
               >
                 {t('menu.item.category')}
               </label>
-              <select
+              <Dropdown
                 id="item-category"
-                value={categoryId}
-                onChange={(e) => setCategoryId(Number(e.target.value))}
-                className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-              >
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+                className="mt-2"
+                value={String(categoryId)}
+                onChange={(v) => setCategoryId(Number(v))}
+                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+              />
             </div>
 
             <div>
@@ -471,24 +467,22 @@ export default function ItemDrawer({
                           className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
                         />
                       </label>
-                      <label className="flex-1 text-[13px] text-fg-muted">
+                      <div className="flex-1 text-[13px] text-fg-muted">
                         {t('menu.item.pricingRule')}
-                        <select
+                        <Dropdown
+                          className="mt-1"
+                          aria-label={t('menu.item.pricingRule')}
                           value={group.pricingRule}
-                          onChange={(e) =>
-                            patchGroup(groupIndex, {
-                              pricingRule: e.target.value as PricingRule,
-                            })
+                          onChange={(v) =>
+                            patchGroup(groupIndex, { pricingRule: v as PricingRule })
                           }
-                          className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                        >
-                          <option value="sum">{t('menu.item.pricingRuleSum')}</option>
-                          <option value="max">{t('menu.item.pricingRuleMax')}</option>
-                          <option value="average">
-                            {t('menu.item.pricingRuleAverage')}
-                          </option>
-                        </select>
-                      </label>
+                          options={[
+                            { value: 'sum', label: t('menu.item.pricingRuleSum') },
+                            { value: 'max', label: t('menu.item.pricingRuleMax') },
+                            { value: 'average', label: t('menu.item.pricingRuleAverage') },
+                          ]}
+                        />
+                      </div>
                     </div>
 
                     <div className="mt-3 flex flex-col gap-2">
