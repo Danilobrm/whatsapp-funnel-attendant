@@ -19,9 +19,14 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Dobra qualquer inteiro de minutos pro intervalo [0, 1440) — aritmética circular do dia. */
+export function wrapMinutes(minutes: number): number {
+  return ((minutes % MINUTES_IN_DAY) + MINUTES_IN_DAY) % MINUTES_IN_DAY;
+}
+
 /** "HH:MM" — 1440 (meia-noite do fim do dia) vira "00:00", não "24:00". */
 export function minutesToLabel(minutes: number): string {
-  const wrapped = ((minutes % MINUTES_IN_DAY) + MINUTES_IN_DAY) % MINUTES_IN_DAY;
+  const wrapped = wrapMinutes(minutes);
   const h = Math.floor(wrapped / 60);
   const m = wrapped % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
@@ -37,17 +42,37 @@ export function minutesToPercent(minutes: number): number {
 }
 
 /**
- * Posição do ponteiro (`clientX`) relativa à trilha → minutos do dia,
- * arredondado ao step. `trackWidth <= 0` (trilha ainda não medida) devolve 0.
+ * Posição do ponteiro relativa à trilha → minutos do dia, arredondado ao
+ * step. Funciona pro eixo X (barra horizontal) ou Y (grade semanal vertical)
+ * — só depende de qual coordenada o chamador passa. `trackSize <= 0` (trilha
+ * ainda não medida) devolve 0. Satura em [0, 1440]: usar quando a ponta NÃO
+ * pode cruzar meia-noite (ex.: início de um intervalo).
  */
 export function positionToMinutes(
-  clientX: number,
-  trackLeft: number,
-  trackWidth: number,
+  pointerPosition: number,
+  trackStart: number,
+  trackSize: number,
 ): number {
-  if (trackWidth <= 0) return 0;
-  const ratio = clamp((clientX - trackLeft) / trackWidth, 0, 1);
+  if (trackSize <= 0) return 0;
+  const ratio = clamp((pointerPosition - trackStart) / trackSize, 0, 1);
   return snapToStep(clamp(ratio * MINUTES_IN_DAY, 0, MINUTES_IN_DAY));
+}
+
+/**
+ * Mesma conversão, mas sem saturar em [0, 1440] — o ponteiro pode continuar
+ * além do fim (ou antes do início) da trilha e o valor DOBRA pro outro lado
+ * do dia (aritmética circular, via `wrapMinutes`). É o que permite arrastar o
+ * fim de um intervalo "pra baixo da meia-noite" na grade semanal, criando um
+ * horário que cruza pro dia seguinte.
+ */
+export function positionToMinutesWrapped(
+  pointerPosition: number,
+  trackStart: number,
+  trackSize: number,
+): number {
+  if (trackSize <= 0) return 0;
+  const ratio = (pointerPosition - trackStart) / trackSize;
+  return snapToStep(wrapMinutes(ratio * MINUTES_IN_DAY));
 }
 
 export interface BarSegment {

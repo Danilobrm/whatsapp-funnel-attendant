@@ -6,7 +6,9 @@ import {
   minutesToLabel,
   minutesToPercent,
   positionToMinutes,
+  positionToMinutesWrapped,
   snapToStep,
+  wrapMinutes,
 } from './timeSlots.ts';
 
 describe('minutesToLabel', () => {
@@ -69,6 +71,47 @@ describe('positionToMinutes', () => {
 
   it('devolve 0 quando a trilha ainda não foi medida', () => {
     expect(positionToMinutes(150, 0, 0)).toBe(0);
+  });
+});
+
+describe('wrapMinutes', () => {
+  it('mantém valores já dentro do dia', () => {
+    expect(wrapMinutes(0)).toBe(0);
+    expect(wrapMinutes(720)).toBe(720);
+    expect(wrapMinutes(1439)).toBe(1439);
+  });
+
+  it('dobra valores acima de 1440 pro início do dia', () => {
+    expect(wrapMinutes(1440)).toBe(0);
+    expect(wrapMinutes(1500)).toBe(60);
+  });
+
+  it('dobra valores negativos pro fim do dia', () => {
+    expect(wrapMinutes(-60)).toBe(1380);
+  });
+});
+
+describe('positionToMinutesWrapped', () => {
+  it('converte normalmente dentro da trilha', () => {
+    expect(positionToMinutesWrapped(0, 0, 300)).toBe(0);
+    expect(positionToMinutesWrapped(150, 0, 300)).toBe(720);
+  });
+
+  it('continua além do fim da trilha e dobra pro início (cruza meia-noite)', () => {
+    // 330px numa trilha de 300px = 110% do dia = 1584min -> dobra pra 144min (02:24).
+    expect(positionToMinutesWrapped(330, 0, 300)).toBe(
+      snapToStep(wrapMinutes(1.1 * 24 * 60)),
+    );
+  });
+
+  it('continua antes do início da trilha e dobra pro fim', () => {
+    expect(positionToMinutesWrapped(-30, 0, 300)).toBe(
+      snapToStep(wrapMinutes(-0.1 * 24 * 60)),
+    );
+  });
+
+  it('devolve 0 quando a trilha ainda não foi medida', () => {
+    expect(positionToMinutesWrapped(150, 0, 0)).toBe(0);
   });
 });
 
