@@ -602,6 +602,54 @@ Sobrou no legado (`api/server.ts`): CORS, `express.json` com `verify`, `express.
 
 Converter services/repositories em classes, trocar Express por Fastify, mexer no frontend, mudar rotas ou schema.
 
+## Fase N2 — Injeção de dependência completa (padrão NestJS)
+
+Continuação da Fase N. Hoje o Nest só cuida de controllers/guards/filters; services, repositories e clients são funções com estado em módulo. Objetivo: **todo colaborador com dependência ou I/O vira `@Injectable()` injetado por construtor, cada contexto tem seu `*.module.ts` com `imports`/`providers`/`exports` explícitos**, sem mudar contrato HTTP nem banco.
+
+### Decisões
+
+- [x] **Injeção por TIPO no construtor** (padrão Nest), não `@Inject(Token)` em todo parâmetro. Exige metadata de decorator: Vitest ganha o plugin SWC (`unplugin-swc`); `dev`/`seed` rodam com `node --import @swc-node/register/esm-register` (esbuild/`tsx` não emitem `design:paramtypes`); `tsc` (build/prod) já emite. Spike validado: teste com DI por tipo passa e `src/index.ts` sobe contra o Postgres.
+- [x] **Fica função (sem classe)**: código puro sem dependência — `pricing`, `order.status`, `order.time`, `store.hours`, `neighborhood`, `owner`, `cart.hash`, `summary`, `order.messages`, `order.sample`, `dashboard.stats`, `menuLink.pure/code`, `whatsapp.payload/signature`, `google.parse`, `osm.parse`, `agent.prompt`, `agent/tools/{args,definitions,views}`, `guardrails`, `jwt`, `password`, `lib/*`. Classe aqui só adiciona invólucro.
+- [x] **Vira classe injetável**: todo `*.service`, `*.repository`, `*.client`, `order.events`, `imageStorage`, o executor de ferramentas do agente e `store.location`. Cache que hoje é variável de módulo (settings, tenant, cardápio publicado, geo) passa a ser **campo da instância**, o que também elimina `vi.resetModules` nos testes.
+- [x] **Banco**: `DatabaseModule` global com `Database` (pool, `query`, `connect`, `onModuleDestroy` fecha o pool) e `TenantDb`. **O backstop de tenant é mantido**: `TenantDb.query(tenantId, sql, params)` e `TenantTx.query(...)` (dentro de transação) continuam lançando antes de rodar se o SQL não citar `tenant_id` ou se o 1º parâmetro não for o `tenantId`. Repositories de tenant injetam `TenantDb`; os que não têm tenant (login, resolver tenant, link por código, health) injetam `Database`. Migrações rodam em `onModuleInit` (antes do `listen`); falha derruba o boot como hoje.
+- [x] **Ciclo `Order → Conversation → Agent → Order` desfeito**: `sendOutbound` sai de `conversation.service` e vira `OutboundMessenger` (módulo `ConversationModule`: repository + outbound + client do WhatsApp). O tratador de mensagem de entrada (`handleInboundMessage`) fica em `InboundModule`. Sem `forwardRef`.
+- [x] **Fora do escopo (decisão consciente)**: `env` continua importado (config estática, sem `@nestjs/config`: tests mutam `env` hoje e nada precisa de valor por instância); validação continua nos parsers puros (`parseSettings`, `parseCartItems`…) — trocar por `class-validator`/DTOs mudaria os códigos de erro que o frontend traduz. Ambos podem ser fases futuras.
+- [x] **Logging**: `console.*` → `Logger` do Nest por classe, no fim.
+
+### Grafo de módulos (sem ciclos)
+
+```
+DatabaseModule (global)
+TenantsModule        AuthModule → Tenants          HealthModule        SettingsModule       CustomerModule
+MenuModule (+ storage de imagem)                   GeoModule (OSM/Google clients + service)
+StoreModule → Geo (StoreService, StoreLocationService)
+ConversationModule (repository, OutboundMessenger, WhatsAppClient) → WhatsAppClientModule
+OrderModule → Conversation, Menu, Store            MenuLinkModule → Conversation, Menu, Order, Store, Tenants
+AgentModule (LlmClientFactory, context, service, tool executor) → Menu, MenuLink, Order, Store, Customer, Conversation
+InboundModule (ConversationService) → Agent, Conversation, Customer, Settings, Store, Tenants
+SimulatorModule → Inbound, Conversation, Customer, Menu, Order, Store
+DashboardModule → MenuLink, Store              WhatsAppModule (controller + service) → Inbound, Tenants
+AppModule imports todos
+```
+
+### Etapas
+
+- [ ] **A — Infra (verde, um commit):** SWC no Vitest e nos scripts `dev`/`seed`; `Database`/`TenantDb`/`TenantTx` + `DatabaseModule` convivendo com o `config/db.ts` atual (mesmo pool).
+- [ ] **B — Varredura (um commit):** converter tudo na ordem folha → topo, testando cada arquivo isolado enquanto o `tsc` global fica vermelho até fechar — não dá para ter commit verde no meio porque quem chama uma função vira classe junto: `tenants, auth, health, settings, customer → menu → geo → store → conversation/outbound + client → order → menulink → agent → inbound → simulator, dashboard, whatsapp`. Junto: controllers injetam services; um `*.module.ts` por contexto; `AppModule` importa todos; `createApp` recebe `configureApp` compartilhado com o teste de app inteiro; `seed.ts` usa `NestFactory.createApplicationContext`; erros que moram em `*.service.ts` (`InvalidSettingsError`, `TenantNotFoundError`) vão para `errors/`; `config/db.ts`, `tenantQuery.ts`, `transaction.ts` viram `common/database/`.
+- [ ] **C — Logger e limpeza:** `console.*` → `Logger`; `enableShutdownHooks`; sobras de exports de função.
+- [ ] **D — Docs:** `CLAUDE.md`, `testing.md` (unit test de service = `new Service(mockDeps)`, sem `vi.mock` de caminho; controller test = `createTestApp({ controllers, providers })` com `useValue`), `error-handling.md`.
+
+### Como os testes mudam
+
+- Unit de service/repository: `new XService(mockRepo, …)` — sem `vi.mock` de módulo e sem `vi.resetModules` para cache.
+- Controller: `createTestApp({ controllers: [X], providers: [{ provide: XService, useValue: mock }] })`.
+- App inteiro (`app.test.ts`): `Test.createTestingModule({ imports: [AppModule] }).overrideProvider(Database)` (nada de `vi.mock("db.js")`).
+- Contagem de testes não pode cair: cada arquivo de teste antigo tem equivalente. Backstop de tenant segue com teste próprio (`TenantDb`, `TenantTx`) cobrindo as duas formas de bug (SQL sem `tenant_id`, 1º parâmetro trocado) e o teste de isolamento por módulo.
+
+### Pronto quando
+
+`npm test`, `lint`, `typecheck` verdes; nenhum `import { funcaoDeService }` entre módulos (só classes injetadas ou funções puras); `grep -rn "vi.mock(.*services/\|vi.mock(.*repositories/"` vazio; boot real + smoke (login, `orders`, SSE, upload, webhook assinado, simulador ponta a ponta) idênticos ao commit `57a65e8`.
+
 ## Fora da v1
 
 - Pix com confirmação automática de pagamento (link / cobrança dinâmica).
