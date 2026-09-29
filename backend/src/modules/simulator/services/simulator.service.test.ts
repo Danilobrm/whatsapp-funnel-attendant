@@ -16,22 +16,27 @@ vi.mock("../../customer/repositories/customer.repository.js", () => ({
   listSimulatedCustomers: vi.fn(),
   upsertCustomer: vi.fn(),
 }));
-vi.mock("../../menu/services/menu.service.js", () => ({ getPublishedMenu: vi.fn() }));
+vi.mock("../../menu/services/menu.service.js", () => ({
+  getPublishedMenu: vi.fn(),
+}));
 vi.mock("../../store/services/store.service.js", () => ({
   getStoreSettings: vi.fn(),
   listZones: vi.fn(),
 }));
 vi.mock("../../order/services/cart.service.js", () => ({ getCart: vi.fn() }));
 
-const convRepo = await import("../../conversation/repositories/conversation.repository.js");
-const custRepo = await import("../../customer/repositories/customer.repository.js");
+const convRepo =
+  await import("../../conversation/repositories/conversation.repository.js");
+const custRepo =
+  await import("../../customer/repositories/customer.repository.js");
 const menuService = await import("../../menu/services/menu.service.js");
 const storeService = await import("../../store/services/store.service.js");
 const cartService = await import("../../order/services/cart.service.js");
 const { createCustomer, getSimulatorCart, listCustomers, simulatorContactFor } =
   await import("./simulator.service.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
-const { InvalidInputError } = await import("../../errors/invalidInput.error.js");
+const { InvalidInputError } =
+  await import("../../errors/invalidInput.error.js");
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(4);

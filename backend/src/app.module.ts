@@ -6,6 +6,7 @@ import { DashboardModule } from "./modules/dashboard/dashboard.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { MenuModule } from "./modules/menu/menu.module.js";
 import { SettingsModule } from "./modules/settings/settings.module.js";
+import { SimulatorModule } from "./modules/simulator/simulator.module.js";
 import { StoreModule } from "./modules/store/store.module.js";
 
 /**
@@ -22,6 +23,7 @@ import { StoreModule } from "./modules/store/store.module.js";
     DashboardModule,
     StoreModule,
     MenuModule,
+    SimulatorModule,
   ],
 })
 export class AppModule {}
