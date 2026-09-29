@@ -1,7 +1,10 @@
 import { InvalidOrderError } from "../errors/order.errors.js";
 
 import type { Menu, MenuItem } from "../../menu/types/menu.types.js";
-import type { DeliveryZone, PaymentMethod } from "../../store/types/store.types.js";
+import type {
+  DeliveryZone,
+  PaymentMethod,
+} from "../../store/types/store.types.js";
 import type { NewOrderInput, OrderItem } from "../types/order.types.js";
 
 /**

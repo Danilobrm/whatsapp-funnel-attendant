@@ -4,7 +4,6 @@ import express, { type Express, type Request } from "express";
 import { env } from "../config/env.js";
 import { productImagesDir } from "../modules/menu/storage/imageStorage.js";
 import { createPublicRoutes } from "../modules/menulink/routes/publicRoutes.js";
-import { createOrderRoutes } from "../modules/order/routes/orderRoutes.js";
 import { whatsappRoutes } from "../modules/whatsapp/routes/whatsappRoutes.js";
 import { requireAuth } from "./middlewares/auth/requireAuth.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
@@ -42,7 +41,6 @@ export function createServer(): Express {
   // ---- Superfície autenticada ----
   // O guard fica no MOUNT, não rota a rota: esquecer é impossível, porque não
   // existe lugar onde omitir.
-  app.use("/api/orders", requireAuth, createOrderRoutes());
 
   app.use(errorHandler);
 

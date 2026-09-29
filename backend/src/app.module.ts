@@ -5,6 +5,7 @@ import { AuthModule } from "./modules/auth/auth.module.js";
 import { DashboardModule } from "./modules/dashboard/dashboard.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { MenuModule } from "./modules/menu/menu.module.js";
+import { OrderModule } from "./modules/order/order.module.js";
 import { SettingsModule } from "./modules/settings/settings.module.js";
 import { SimulatorModule } from "./modules/simulator/simulator.module.js";
 import { StoreModule } from "./modules/store/store.module.js";
@@ -24,6 +25,7 @@ import { StoreModule } from "./modules/store/store.module.js";
     StoreModule,
     MenuModule,
     SimulatorModule,
+    OrderModule,
   ],
 })
 export class AppModule {}

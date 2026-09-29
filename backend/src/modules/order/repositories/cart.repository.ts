@@ -1,7 +1,12 @@
 import { tenantQuery } from "../../../config/tenantQuery.js";
 
 import type { TenantId } from "../../tenants/types/tenant.types.js";
-import type { Cart, CartAddress, CartLine, CartStatus } from "../types/cart.types.js";
+import type {
+  Cart,
+  CartAddress,
+  CartLine,
+  CartStatus,
+} from "../types/cart.types.js";
 import type { Fulfillment } from "../types/order.types.js";
 import type { PaymentMethod } from "../../store/types/store.types.js";
 

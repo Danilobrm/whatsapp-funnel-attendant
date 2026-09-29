@@ -17,11 +17,14 @@ vi.mock("../../store/services/store.service.js", () => ({
   getStoreSettings: vi.fn(),
   listZones: vi.fn(),
 }));
-vi.mock("../../menu/services/menu.service.js", () => ({ getFullMenu: vi.fn() }));
+vi.mock("../../menu/services/menu.service.js", () => ({
+  getFullMenu: vi.fn(),
+}));
 
 const repo = await import("../repositories/order.repository.js");
 const events = await import("../events/order.events.js");
-const conversation = await import("../../conversation/services/conversation.service.js");
+const conversation =
+  await import("../../conversation/services/conversation.service.js");
 const conversationRepo =
   await import("../../conversation/repositories/conversation.repository.js");
 const store = await import("../../store/services/store.service.js");
