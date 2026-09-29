@@ -1,0 +1,31 @@
+import "reflect-metadata";
+import { NestFactory } from "@nestjs/core";
+
+import { AppModule } from "./app.module.js";
+import { createServer } from "./api/server.js";
+
+import type { NestExpressApplication } from "@nestjs/platform-express";
+import type { Type } from "@nestjs/common";
+
+/**
+ * Sobe o Nest com o Express legado montado ANTES das rotas do Nest.
+ *
+ * Ordem importa: `app.use(legacy)` acontece antes de `init()`, que é quando o
+ * Nest registra suas rotas. Uma requisição entra no legado; se nenhuma rota
+ * dele casa, o Express segue adiante e chega no Nest (que responde 404 se
+ * também não tiver a rota). O legado já leu o corpo (`req._body`), então o
+ * body-parser do Nest o ignora — e o `rawBody` do webhook segue vindo do
+ * `verify` do legado até o módulo `whatsapp` ser portado.
+ *
+ * `root` existe para o teste registrar um módulo próprio; produção usa o
+ * `AppModule`.
+ */
+export async function createApp(
+  root: Type<unknown> = AppModule,
+): Promise<NestExpressApplication> {
+  const app = await NestFactory.create<NestExpressApplication>(root, {
+    logger: ["error", "warn"],
+  });
+  app.use(createServer());
+  return app;
+}

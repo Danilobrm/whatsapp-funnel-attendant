@@ -264,19 +264,22 @@ Um pedido feito do celular pelo WhatsApp percorre exatamente o mesmo caminho que
 
 Branch `refactor/migrar-backend-nest` (parte do commit `9f75ab9`). **Sem mudança de contrato**: mesmas rotas, mesmos status, mesmo JSON, mesmo banco, frontend intocado. Uma fase por vez, cada módulo termina com `npm test && npm run lint && npm run typecheck` verdes.
 
-### Decisões (confirmar antes de começar)
+### Decisões (tomadas na Etapa 0)
 
-- [ ] **Services continuam funções puras** (`tenantId` primeiro, `vi.mock` nos testes). Nest entra em controllers, módulos, guards, filters e pipes. Motivo: reescrever ~100 arquivos de service/repository em classes não traz ganho e arrisca o backstop `tenantQuery`. Consequência honesta: DI quase não é usada nesta fase. Converter service a service para `@Injectable()` é fase posterior, opcional.
-- [ ] **Plataforma Express** (`@nestjs/platform-express`): mantém `multer`, `cors`, `express.static` e o SSE atual.
-- [ ] **Ponte de migração**: `NestFactory.create(AppModule, new ExpressAdapter(legacyApp))` — as rotas ainda não portadas continuam no Express legado, as portadas saem do Nest. Some quando o último módulo migrar.
-- [ ] **Decorators sem `emitDecoratorMetadata` confiável**: `tsx` e o esbuild do Vitest não emitem metadata. Usar `@Inject(Token)` explícito OU trocar por SWC (`unplugin-swc` no Vitest, `@swc-node/register` no dev). Decidir na Etapa 0.
+- [x] **Services continuam funções puras** (`tenantId` primeiro, `vi.mock` nos testes). Nest entra em controllers, módulos, guards, filters e pipes. Consequência honesta: DI quase não é usada nesta fase; converter service a service para `@Injectable()` é fase posterior, opcional.
+- [x] **Nest 12** (ESM nativo, casa com o projeto `NodeNext`) sobre `@nestjs/platform-express`, que traz o próprio Express 5 aninhado. O `express` 4 direto do projeto só serve ao legado e sai na Etapa 3.
+- [x] **Ponte de migração** (`src/bootstrap.ts`): `NestFactory.create(AppModule)` e `app.use(createServer())` ANTES de `init()`. O legado responde o que conhece; o resto cai no Nest. (Não usamos `ExpressAdapter(legacyApp)`: o Nest 12 traz Express 5, e passar um app Express 4 como instância é o caminho frágil.)
+- [x] **Sem SWC**: `tsx` e o esbuild do Vitest respeitam `experimentalDecorators` mas não emitem `emitDecoratorMetadata`. Enquanto não houver injeção por tipo no construtor, isso não importa. Ao primeiro provider injetado: `@Inject(Token)` explícito.
 
-### Etapa 0 — Setup
+### Etapa 0 — Setup (feito)
 
-- [ ] Deps: `@nestjs/common @nestjs/core @nestjs/platform-express @nestjs/testing reflect-metadata rxjs`.
-- [ ] `tsconfig`: `experimentalDecorators`, `emitDecoratorMetadata`; Vitest com SWC; `npm run dev` continua subindo.
-- [ ] `src/main.ts`: `assertProductionSecrets` → `runMigrations` → `NestFactory` → `listen` (mesma ordem de boot de hoje). `rawBody: true`, CORS igual, `/produtos` estático.
-- [ ] `AppModule` vazio + ponte com o Express legado. Suíte inteira verde, nada portado ainda.
+- [x] Deps: `@nestjs/common @nestjs/core @nestjs/platform-express @nestjs/testing reflect-metadata rxjs`.
+- [x] `tsconfig`: `experimentalDecorators`, `emitDecoratorMetadata`; `npm run dev`, `build` e `start` continuam funcionando.
+- [x] Boot na mesma ordem de hoje: `assertProductionSecrets` → `runMigrations` → `createApp()` → `listen` (`index.ts` segue como entrada; não virou `main.ts` para não mexer em scripts/Dockerfile).
+- [x] `AppModule` vazio + ponte com o Express legado (`bootstrap.test.ts`: rota legada, guard 401, rota Nest, corpo JSON legado → controller Nest, 404, webhook com assinatura sobre bytes crus e com assinatura errada). Suíte inteira verde; subida real contra o Postgres respondeu `/health` 200 e `/api/orders` 401.
+- [x] Corrigido `types/express.d.ts`, que apontava para o caminho antigo de `auth.types` (o `skipLibCheck` escondia).
+
+Nota para a Etapa 1: o legado lê o corpo primeiro, então `rawBody` do Nest só existirá quando o `whatsapp` for portado e o `express.json` legado sair.
 
 ### Etapa 1 — Transversais
 

@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { assertProductionSecrets, env } from "./config/env.js";
 import { runMigrations } from "./config/migrate.js";
-import { createServer } from "./api/server.js";
+import { createApp } from "./bootstrap.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("[unhandledRejection] escapou do asyncHandler:", reason);
@@ -27,8 +27,7 @@ try {
   process.exit(1);
 }
 
-const app = createServer();
+const app = await createApp();
 
-app.listen(env.port, () => {
-  console.log(`API rodando em http://localhost:${env.port}`);
-});
+await app.listen(env.port);
+console.log(`API rodando em http://localhost:${env.port}`);
