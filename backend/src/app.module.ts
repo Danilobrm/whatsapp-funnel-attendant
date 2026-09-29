@@ -7,6 +7,7 @@ import { HealthModule } from "./modules/health/health.module.js";
 import { MenuModule } from "./modules/menu/menu.module.js";
 import { MenuLinkModule } from "./modules/menulink/menulink.module.js";
 import { OrderModule } from "./modules/order/order.module.js";
+import { WhatsAppModule } from "./modules/whatsapp/whatsapp.module.js";
 import { SettingsModule } from "./modules/settings/settings.module.js";
 import { SimulatorModule } from "./modules/simulator/simulator.module.js";
 import { StoreModule } from "./modules/store/store.module.js";
@@ -28,6 +29,7 @@ import { StoreModule } from "./modules/store/store.module.js";
     SimulatorModule,
     OrderModule,
     MenuLinkModule,
+    WhatsAppModule,
   ],
 })
 export class AppModule {}

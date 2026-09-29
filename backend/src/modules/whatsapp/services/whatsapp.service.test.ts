@@ -10,7 +10,8 @@ vi.mock("../clients/whatsapp.client.js", () => ({
   sendWhatsAppText: vi.fn(),
 }));
 
-const conversation = await import("../../conversation/services/conversation.service.js");
+const conversation =
+  await import("../../conversation/services/conversation.service.js");
 const tenants = await import("../../tenants/services/tenant.service.js");
 const client = await import("../clients/whatsapp.client.js");
 const { processWebhook } = await import("./whatsapp.service.js");

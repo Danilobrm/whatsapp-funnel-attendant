@@ -3,7 +3,6 @@ import express, { type Express, type Request } from "express";
 
 import { env } from "../config/env.js";
 import { productImagesDir } from "../modules/menu/storage/imageStorage.js";
-import { whatsappRoutes } from "../modules/whatsapp/routes/whatsappRoutes.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
 const WEBHOOK_PREFIX = "/webhooks/";
@@ -27,7 +26,6 @@ export function createServer(): Express {
   );
 
   // ---- Superfície pública ----
-  app.use("/webhooks/whatsapp", whatsappRoutes); // autenticado por assinatura HMAC
   // Fotos de produto: público (o painel usa a URL direto em <img>), como
   // seria um bucket S3 público. Só o UPLOAD (`POST /api/menu/images`) exige
   // login — servir o arquivo depois de gravado não precisa.
