@@ -1,3 +1,5 @@
+import multer from "multer";
+
 import type { ErrorRequestHandler } from "express";
 
 import {
@@ -66,6 +68,18 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
       status: "invalid",
       code: error.code,
       field: error.field,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // Arquivo grande demais, campo errado etc. — o multer lança antes do
+  // `InvalidMenuError` do fileFilter ter chance de rodar nesses casos.
+  if (error instanceof multer.MulterError) {
+    res.status(422).json({
+      status: "invalid",
+      code: "image_too_large",
+      field: "image",
       checkedAt: new Date().toISOString(),
     });
     return;

@@ -12,8 +12,12 @@ vi.mock("../../modules/menu/menu.service.js", () => ({
   updateCategory: vi.fn(),
   updateItem: vi.fn(),
 }));
+vi.mock("../../modules/menu/imageStorage.js", () => ({
+  saveProductImage: vi.fn(),
+}));
 
 const service = await import("../../modules/menu/menu.service.js");
+const imageStorage = await import("../../modules/menu/imageStorage.js");
 const {
   getMenu,
   postCategory,
@@ -23,6 +27,7 @@ const {
   putItem,
   deleteItemHandler,
   patchItemAvailability,
+  postItemImage,
 } = await import("./menuController.js");
 
 import { asTenantId } from "../../modules/tenants/tenant.types.js";
@@ -180,5 +185,44 @@ describe("itens", () => {
 
     expect(service.setItemAvailability).toHaveBeenCalledWith(TENANT, 7, false);
     expect(res.status).toHaveBeenCalledWith(204);
+  });
+});
+
+describe("postItemImage", () => {
+  it("salva o arquivo e devolve a URL com 201", async () => {
+    (imageStorage.saveProductImage as ReturnType<typeof vi.fn>).mockResolvedValue({
+      url: "/produtos/abc.png",
+    });
+    const res = makeRes();
+    const file = {
+      buffer: Buffer.from("fake"),
+      mimetype: "image/png",
+    };
+
+    await postItemImage(
+      { ...AUTH_REQ, file } as never,
+      res as never,
+      vi.fn(),
+    );
+
+    expect(imageStorage.saveProductImage).toHaveBeenCalledWith(
+      file.buffer,
+      "image/png",
+    );
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(res.json).toHaveBeenCalledWith({ url: "/produtos/abc.png" });
+  });
+
+  it("encaminha image_required pra next quando não veio arquivo (asyncHandler)", async () => {
+    const next = vi.fn();
+
+    postItemImage({ ...AUTH_REQ, file: undefined } as never, makeRes() as never, next);
+
+    await vi.waitFor(() =>
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "image_required" }),
+      ),
+    );
+    expect(imageStorage.saveProductImage).not.toHaveBeenCalled();
   });
 });

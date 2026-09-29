@@ -1,3 +1,4 @@
+import multer from "multer";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -185,6 +186,24 @@ describe("errorHandler", () => {
       status: "invalid",
       code: "min_greater_than_max",
       field: "max_select",
+    });
+  });
+
+  it("maps a MulterError (arquivo grande demais) to 422 image_too_large", () => {
+    const res = makeRes();
+
+    errorHandler(
+      new multer.MulterError("LIMIT_FILE_SIZE"),
+      {} as never,
+      res as never,
+      vi.fn(),
+    );
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json.mock.calls[0]?.[0]).toMatchObject({
+      status: "invalid",
+      code: "image_too_large",
+      field: "image",
     });
   });
 });

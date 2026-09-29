@@ -1,4 +1,5 @@
 import { InvalidMenuError } from "../../modules/errors/invalidMenu.error.js";
+import { saveProductImage } from "../../modules/menu/imageStorage.js";
 import {
   createCategory,
   createItem,
@@ -82,4 +83,22 @@ export const patchItemAvailability = asyncHandler(async (req, res) => {
 export const postItemsReorder = asyncHandler(async (req, res) => {
   await reorderItems(tenantOf(req), orderedIds(req.body));
   res.status(204).send();
+});
+
+/**
+ * `uploadProductImage` (multer) roda ANTES desta, na rota. Já valida tipo
+ * (fileFilter) e tamanho (limits) — aqui só falta checar que veio arquivo.
+ */
+export const postItemImage = asyncHandler(async (req, res) => {
+  // `tenantOf` só pra manter o guard de autenticação explícito aqui também —
+  // upload não é tenant-scoped em si (o arquivo não carrega tenant_id), mas
+  // a rota exige o mesmo login que o resto de /api/menu.
+  tenantOf(req);
+
+  if (!req.file) {
+    throw new InvalidMenuError("image_required", "image");
+  }
+
+  const stored = await saveProductImage(req.file.buffer, req.file.mimetype);
+  res.status(201).json(stored);
 });

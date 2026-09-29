@@ -8,10 +8,12 @@ import {
   postCategoriesReorder,
   postCategory,
   postItem,
+  postItemImage,
   postItemsReorder,
   putCategory,
   putItem,
 } from "../controllers/menuController.js";
+import { uploadProductImage } from "../middlewares/upload.js";
 
 // Guardado no mount, em `server.ts`.
 export const menuRoutes = Router();
@@ -28,3 +30,5 @@ menuRoutes.put("/items/:id", putItem);
 menuRoutes.delete("/items/:id", deleteItemHandler);
 menuRoutes.patch("/items/:id/availability", patchItemAvailability);
 menuRoutes.post("/items/reorder", postItemsReorder);
+
+menuRoutes.post("/images", uploadProductImage.single("image"), postItemImage);

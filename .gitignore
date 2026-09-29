@@ -32,3 +32,7 @@ Thumbs.db
 coverage/
 .cache/
 *.tsbuildinfo
+
+# Uploads locais (fotos de produto — futuramente S3)
+backend/produtos/*
+!backend/produtos/.gitkeep

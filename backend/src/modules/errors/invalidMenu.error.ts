@@ -29,7 +29,10 @@ export type InvalidMenuCode =
   | "fulfillment_required"
   | "neighborhood_required"
   | "fee_invalid"
-  | "zone_not_found";
+  | "zone_not_found"
+  | "image_required"
+  | "image_invalid_type"
+  | "image_too_large";
 
 export class InvalidMenuError extends Error {
   readonly code: InvalidMenuCode;

@@ -2,6 +2,7 @@ import cors from "cors";
 import express, { type Express, type Request } from "express";
 
 import { env } from "../config/env.js";
+import { productImagesDir } from "../modules/menu/imageStorage.js";
 import { authRoutes } from "./routes/authRoutes.js";
 import { healthRoutes } from "./routes/healthRoutes.js";
 import { menuRoutes } from "./routes/menuRoutes.js";
@@ -36,6 +37,10 @@ export function createServer(): Express {
   app.use("/health", healthRoutes);
   app.use("/api/auth", authRoutes); // POST /login aberto; GET /me guarda no router
   app.use("/webhooks/whatsapp", whatsappRoutes); // autenticado por assinatura HMAC
+  // Fotos de produto: público (o painel usa a URL direto em <img>), como
+  // seria um bucket S3 público. Só o UPLOAD (`POST /api/menu/images`) exige
+  // login — servir o arquivo depois de gravado não precisa.
+  app.use("/produtos", express.static(productImagesDir()));
 
   // ---- Superfície autenticada ----
   // O guard fica no MOUNT, não rota a rota: esquecer é impossível, porque não
