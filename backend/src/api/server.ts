@@ -3,7 +3,6 @@ import express, { type Express, type Request } from "express";
 
 import { env } from "../config/env.js";
 import { productImagesDir } from "../modules/menu/storage/imageStorage.js";
-import { menuRoutes } from "../modules/menu/routes/menuRoutes.js";
 import { createPublicRoutes } from "../modules/menulink/routes/publicRoutes.js";
 import { createOrderRoutes } from "../modules/order/routes/orderRoutes.js";
 import { simulatorRoutes } from "../modules/simulator/routes/simulatorRoutes.js";
@@ -45,7 +44,6 @@ export function createServer(): Express {
   // O guard fica no MOUNT, não rota a rota: esquecer é impossível, porque não
   // existe lugar onde omitir.
   app.use("/api/simulator", requireAuth, simulatorRoutes);
-  app.use("/api/menu", requireAuth, menuRoutes);
   app.use("/api/orders", requireAuth, createOrderRoutes());
 
   app.use(errorHandler);
