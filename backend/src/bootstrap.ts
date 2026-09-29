@@ -25,6 +25,7 @@ export async function createApp(
 ): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(root, {
     logger: ["error", "warn"],
+    rawBody: true,
   });
   app.use(createServer());
   return app;

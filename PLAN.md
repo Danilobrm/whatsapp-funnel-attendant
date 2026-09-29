@@ -281,13 +281,16 @@ Branch `refactor/migrar-backend-nest` (parte do commit `9f75ab9`). **Sem mudanç
 
 Nota para a Etapa 1: o legado lê o corpo primeiro, então `rawBody` do Nest só existirá quando o `whatsapp` for portado e o `express.json` legado sair.
 
-### Etapa 1 — Transversais
+### Etapa 1 — Transversais (feito)
 
-- [ ] `AuthGuard` (porta `requireAuth`; `verifyAuthToken` segue devolvendo union) + decorators `@Auth()` / `@Tenant()` no lugar de `authOf/tenantOf`. Guard no **módulo/controller inteiro**, não rota a rota (mesma garantia do guard-no-mount de hoje). Rotas públicas marcadas explicitamente (`@Public()`).
-- [ ] `AllExceptionsFilter` (`@Catch()`): porta 1:1 o `errorHandler` (mapa erro→status→corpo, 500 com mensagem fixa, `multer` incluso). Testes do `errorHandler` viram testes do filter — mesmos casos.
-- [ ] `RateLimitGuard` (janela deslizante por IP, GET 60/min, POST 20/min, mesmo `RateLimitedError`).
-- [ ] `rawBody` do webhook: `req.rawBody` do Nest no lugar do `verify` do `express.json`. **Prova obrigatória**: teste com payload assinado real (bytes ≠ `JSON.stringify(body)`).
-- [ ] Regra `error-handling.md`: `asyncHandler` deixa de existir (Nest captura rejeição). Reescrever a regra para "todo erro é classe tipada mapeada no `AllExceptionsFilter`".
+Tudo em `src/common/` (+ `modules/auth/utils/bearer.ts`, `modules/whatsapp/guards/`).
+
+- [x] `AuthGuard` **global e fechado por padrão** (porta `requireAuth` via `readBearerAuth`, compartilhado com o middleware legado) + `@Public()` para abrir rota + `@Auth()` / `@Tenant()` no lugar de `authOf/tenantOf`. Melhor que o guard-no-mount: esquecer de marcar protege, não expõe.
+- [x] `AllExceptionsFilter` (`@Catch()`) sobre `common/http/errorMapping.ts` (`mapError`), o mapa ÚNICO usado também pelo `errorHandler` legado: os 21 testes antigos do `errorHandler` seguem verdes e um teste de paridade compara filter × legado para os 13 tipos de erro. Trata `HttpException` (rota inexistente → 404 `route_not_found`, não 500) e `headersSent` (SSE).
+- [x] `RateLimitGuard` + `@RateLimit({ windowMs, max })` sobre `SlidingWindowLimiter` (também usado pelo `createRateLimiter` legado). Um balde por handler, por IP.
+- [x] `WebhookSignatureGuard` (`modules/whatsapp/guards/`) lê `req.rawBody`; `rawBody: true` ligado no `create`. **Prova**: teste Nest nativo (sem legado) com payload de espaços duplos/unicode — assinatura sobre os bytes originais passa, sobre `JSON.stringify(JSON.parse(x))` dá 403, sem cabeçalho dá 403.
+- [x] Regra `error-handling.md` ganhou a seção NestJS. `asyncHandler` só sai na Etapa 3 (o legado ainda usa).
+- [x] Mutação verificada: com `rawBody: false` e com o bypass de `@Public()` quebrado, os testes falham.
 
 ### Etapa 2 — Portar módulo a módulo
 

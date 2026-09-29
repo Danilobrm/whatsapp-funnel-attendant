@@ -2,7 +2,15 @@ import { createHmac } from "node:crypto";
 
 import { Body, Controller, Get, Module, Post } from "@nestjs/common";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 vi.mock("./config/db.js", () => ({
   query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
@@ -22,23 +30,34 @@ vi.stubEnv("WHATSAPP_APP_SECRET", APP_SECRET);
 vi.stubEnv("WHATSAPP_VERIFY_TOKEN", "test-verify-token");
 
 const { createApp } = await import("./bootstrap.js");
+const { CommonModule } = await import("./common/common.module.js");
+const { Public, Tenant } =
+  await import("./common/decorators/auth.decorators.js");
+const { signAuthToken } = await import("./modules/auth/utils/jwt.js");
 const { processWebhook } =
   await import("./modules/whatsapp/services/whatsapp.service.js");
 
 @Controller("nest-probe")
 class ProbeController {
+  @Public()
   @Get()
   ping() {
     return { from: "nest" };
   }
 
+  @Public()
   @Post("echo")
   echo(@Body() body: unknown) {
     return { received: body };
   }
+
+  @Get("tenant")
+  tenant(@Tenant() tenantId: number) {
+    return { tenantId };
+  }
 }
 
-@Module({ controllers: [ProbeController] })
+@Module({ imports: [CommonModule], controllers: [ProbeController] })
 class ProbeModule {}
 
 describe("ponte Nest + Express legado", () => {
@@ -81,18 +100,28 @@ describe("ponte Nest + Express legado", () => {
   });
 
   it("corpo JSON lido pelo legado chega ao controller do Nest", async () => {
-    const res = await request(http())
-      .post("/nest-probe/echo")
-      .send({ a: 1 });
+    const res = await request(http()).post("/nest-probe/echo").send({ a: 1 });
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ received: { a: 1 } });
   });
 
-  it("rota que ninguém conhece dá 404", async () => {
+  it("rota do Nest sem @Public() passa pelo guard global (401 sem token, 200 com)", async () => {
+    const denied = await request(http()).get("/nest-probe/tenant");
+    const token = signAuthToken({ userId: 1, tenantId: 8 });
+    const ok = await request(http())
+      .get("/nest-probe/tenant")
+      .set("Authorization", `Bearer ${token}`);
+
+    expect(denied.status).toBe(401);
+    expect(ok.body).toEqual({ tenantId: 8 });
+  });
+
+  it("rota que ninguém conhece dá 404 no formato do projeto", async () => {
     const res = await request(http()).get("/nao-existe");
 
     expect(res.status).toBe(404);
+    expect(res.body.code).toBe("route_not_found");
   });
 
   it("webhook assinado passa pela ponte com o rawBody do legado", async () => {

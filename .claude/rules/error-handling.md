@@ -86,3 +86,14 @@ if (res.status === "rejected") {
 ## Why
 
 Crashes lose in-flight requests, kill websocket subscribers, and rotate the container in prod — a single bad `POST` becomes an outage. Typed errors + a single mapper keep the API contract stable, the logs actionable, and the frontend able to render specific UX (retry vs. edit vs. contact support) per code instead of a generic "algo deu errado".
+
+## NestJS (migração em andamento)
+
+O backend está sendo portado para NestJS (`PLAN.md`, Fase N). Enquanto convivem o Express legado (`api/`) e o Nest:
+
+- **Um único mapa Error → HTTP**: `common/http/errorMapping.ts` (`mapError`). O `errorHandler` (Express) e o `AllExceptionsFilter` (Nest) são só adaptadores — um erro tipado novo ganha UM branch em `mapError`, nunca um `res.status(...)` no controller nem um mapa paralelo no filter.
+- **Nest não precisa de `asyncHandler`**: rejeição de handler `async` chega ao filter. Handlers do Express legado continuam exigindo `asyncHandler` até o módulo ser portado.
+- **Guard global fechado por padrão**: `AuthGuard` (`CommonModule`) exige Bearer em todo handler; rota aberta só com `@Public()`. Guard/rate limit lançam erro tipado (`UnauthorizedError`, `RateLimitedError`) — não montam resposta.
+- `@Tenant()` / `@Auth()` substituem `tenantOf(req)` / `authOf(req)`; o `tenantId` vem do token, nunca do body.
+- O filter trata `HttpException` do próprio Nest (rota inexistente → 404 `route_not_found`) e não escreve corpo se `res.headersSent` (SSE).
+- Injeção por tipo no construtor NÃO funciona sob `tsx`/Vitest (sem `emitDecoratorMetadata`): use `@Inject(Token)` explícito.
