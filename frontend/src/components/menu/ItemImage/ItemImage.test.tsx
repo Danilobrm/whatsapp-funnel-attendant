@@ -11,11 +11,19 @@ describe('ItemImage', () => {
     expect(document.querySelector('img')).not.toBeInTheDocument();
   });
 
-  it('renderiza a imagem real quando há src', () => {
+  it('renderiza a imagem real quando há src absoluto', () => {
     render(<ItemImage src="https://example.com/pizza.jpg" alt="Calabresa" />);
     const img = screen.getByRole('img', { name: 'Calabresa' });
     expect(img.tagName).toBe('IMG');
     expect(img).toHaveAttribute('src', 'https://example.com/pizza.jpg');
+  });
+
+  it('resolve src relativo (/produtos/...) contra a API — front e back têm portas diferentes em dev', () => {
+    render(<ItemImage src="/produtos/abc.png" alt="Calabresa" />);
+    expect(screen.getByRole('img', { name: 'Calabresa' })).toHaveAttribute(
+      'src',
+      'http://localhost:3000/produtos/abc.png',
+    );
   });
 
   it('cai no placeholder se a imagem falhar ao carregar', () => {

@@ -179,7 +179,7 @@ describe('ItemDrawer — creating an item', () => {
     await screen.findByText('Trocar foto');
     expect(screen.getByRole('img', { name: 'Calabresa' })).toHaveAttribute(
       'src',
-      '/produtos/abc.png',
+      'http://localhost:3000/produtos/abc.png',
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));

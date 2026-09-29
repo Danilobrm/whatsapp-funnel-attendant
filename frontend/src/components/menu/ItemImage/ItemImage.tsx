@@ -1,7 +1,20 @@
 import { useEffect, useState } from 'react';
 import { ImageOff } from 'lucide-react';
 
+import { API_BASE_URL } from '../../../api/client';
+
 type ItemImageSize = 'sm' | 'md';
+
+/**
+ * `image_url` do backend é relativo (`/produtos/x.png`) — em dev, front e
+ * back rodam em portas diferentes, então um `<img src="/produtos/...">` bate
+ * no Vite (:5173), não na API (:3000), e cai 404 → placeholder. Resolve
+ * contra `API_BASE_URL` só quando é relativo; uma URL absoluta (S3, mais
+ * tarde) passa direto.
+ */
+function resolveSrc(src: string): string {
+  return src.startsWith('/') ? `${API_BASE_URL}${src}` : src;
+}
 
 interface ItemImageProps {
   src: string | null;
@@ -46,7 +59,7 @@ export default function ItemImage({ src, alt, size = 'sm', className = '' }: Ite
 
   return (
     <img
-      src={src}
+      src={resolveSrc(src)}
       alt={alt}
       onError={() => setErrored(true)}
       className={`${sizeClass} flex-none rounded-xl border border-line object-cover ${className}`}
