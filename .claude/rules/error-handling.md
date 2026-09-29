@@ -80,7 +80,7 @@ if (res.status === "rejected") {
 
 1. Extend the union of codes (e.g. `InvalidSettingsCode`) in the module that owns the concept.
 2. Reuse the existing error class if the HTTP semantics match; otherwise create a new class in the same module and export it.
-3. Add an `instanceof` branch in `errorHandler.ts`.
+3. Add an `instanceof` branch in `common/http/errorMapping.ts` (`mapError`) — `errorHandler` and `AllExceptionsFilter` both use it.
 4. Add the code + translation key in `frontend/src/i18n/translations/<locale>.ts` for every locale.
 
 ## Why
