@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { UnauthorizedError } from "../../../modules/auth/auth.errors.js";
-import { signAuthToken } from "../../../modules/auth/jwt.js";
+import { UnauthorizedError } from "../../../modules/auth/errors/auth.errors.js";
+import { signAuthToken } from "../../../modules/auth/utils/jwt.js";
 
 import { requireAuth } from "./requireAuth.js";
 

@@ -1,4 +1,4 @@
-import { request } from '../client';
+import { request } from '../client/client.ts';
 
 export type PricingRule = 'sum' | 'max' | 'average';
 
@@ -109,7 +109,11 @@ export function fetchMenu(): Promise<{ menu: Menu }> {
 export function createCategory(
   input: MenuCategoryFormInput,
 ): Promise<{ category: MenuCategory }> {
-  return request('/api/menu/categories', { method: 'POST', body: input, onStatus });
+  return request('/api/menu/categories', {
+    method: 'POST',
+    body: input,
+    onStatus,
+  });
 }
 
 export function updateCategory(
@@ -144,7 +148,11 @@ export function updateItem(
   id: number,
   input: MenuItemFormInput,
 ): Promise<{ item: MenuItem }> {
-  return request(`/api/menu/items/${id}`, { method: 'PUT', body: input, onStatus });
+  return request(`/api/menu/items/${id}`, {
+    method: 'PUT',
+    body: input,
+    onStatus,
+  });
 }
 
 export function deleteItem(id: number): Promise<void> {

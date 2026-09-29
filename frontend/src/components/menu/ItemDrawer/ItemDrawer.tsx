@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, Upload, X } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 
 import { parseBRLInput } from '../../../lib/money.ts';
-import Dropdown from '../../Dropdown';
-import ItemImage from '../ItemImage';
+import Dropdown from '../../Dropdown/Dropdown.tsx';
+import ItemImage from '../ItemImage/ItemImage.tsx';
 import { useT } from '../../../i18n/index.tsx';
 
-import { MenuRejectedError, uploadItemImage } from '../../../api/menu';
+import { MenuRejectedError, uploadItemImage } from '../../../api/menu/menu.ts';
 import type {
   MenuCategory,
   MenuItem,
   MenuItemFormInput,
   PricingRule,
-} from '../../../api/menu';
+} from '../../../api/menu/menu.ts';
 
 interface SizeDraft {
   name: string;
@@ -39,6 +39,8 @@ interface ItemDrawerProps {
   defaultCategoryId: number | null;
   onClose: () => void;
   onSave: (input: MenuItemFormInput) => Promise<void>;
+  /** Só faz sentido ao editar: exclui o item aberto. */
+  onDelete?: () => Promise<void>;
 }
 
 function centsToText(cents: number): string {
@@ -65,6 +67,13 @@ function toGroupDraft(item: MenuItem | null): GroupDraft[] {
   }));
 }
 
+/**
+ * Tamanhos, grupos de adicionais e os toggles Disponível / No cardápio ficam
+ * ocultos por enquanto (só preço único). O estado e o payload continuam
+ * intactos — itens existentes com tamanhos/grupos não perdem dados ao salvar.
+ */
+const SHOW_ADVANCED_FIELDS = false;
+
 export default function ItemDrawer({
   open,
   categories,
@@ -72,6 +81,7 @@ export default function ItemDrawer({
   defaultCategoryId,
   onClose,
   onSave,
+  onDelete,
 }: ItemDrawerProps) {
   const t = useT();
 
@@ -94,6 +104,8 @@ export default function ItemDrawer({
   const [available, setAvailable] = useState(item?.available ?? true);
   const [active, setActive] = useState(item?.active ?? true);
   const [saving, setSaving] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -146,7 +158,13 @@ export default function ItemDrawer({
   function addGroup() {
     setGroups((current) => [
       ...current,
-      { name: '', minSelect: '0', maxSelect: '1', pricingRule: 'sum', options: [] },
+      {
+        name: '',
+        minSelect: '0',
+        maxSelect: '1',
+        pricingRule: 'sum',
+        options: [],
+      },
     ]);
   }
   function removeGroup(index: number) {
@@ -253,9 +271,9 @@ export default function ItemDrawer({
         role="dialog"
         aria-modal="true"
         aria-label={item ? t('menu.item.editTitle') : t('menu.item.newTitle')}
-        className="relative z-10 flex h-full w-full max-w-lg flex-col border-l border-line bg-surface shadow-lg"
+        className="relative z-10 flex h-dvh w-full max-w-lg flex-col border-l border-line bg-surface shadow-lg"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
+        <header className="flex items-start justify-between gap-4 border-b border-line px-4 py-4 md:px-6 md:py-5">
           <h2 className="text-base font-semibold text-fg">
             {item ? t('menu.item.editTitle') : t('menu.item.newTitle')}
           </h2>
@@ -263,13 +281,13 @@ export default function ItemDrawer({
             type="button"
             onClick={onClose}
             aria-label={t('menu.item.close')}
-            className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-fg"
+            className="inline-flex h-10 w-10 flex-none md:h-8 md:w-8 items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-fg"
           >
             <X className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-6">
           <div className="flex flex-col gap-5">
             {error && (
               <p className="rounded-xl border border-danger-border bg-danger-bg px-4 py-3 text-sm text-danger">
@@ -289,90 +307,83 @@ export default function ItemDrawer({
                 className="mt-2"
                 value={String(categoryId)}
                 onChange={(v) => setCategoryId(Number(v))}
-                options={categories.map((c) => ({ value: String(c.id), label: c.name }))}
+                options={categories.map((c) => ({
+                  value: String(c.id),
+                  label: c.name,
+                }))}
               />
             </div>
 
-            <div>
-              <label htmlFor="item-name" className="block text-sm font-medium text-fg">
-                {t('menu.item.name')}
-              </label>
-              <input
-                id="item-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor="item-description"
-                className="block text-sm font-medium text-fg"
-              >
-                {t('menu.item.description')}
-              </label>
-              <textarea
-                id="item-description"
-                rows={2}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-              />
-            </div>
-
-            <div>
-              <span className="block text-sm font-medium text-fg">
-                {t('menu.item.image')}
-              </span>
-              <div className="mt-2 flex items-start gap-3">
-                <ItemImage
-                  src={imageUrl || null}
-                  alt={name || t('menu.item.imagePlaceholderAlt')}
-                  size="md"
+            <div className="flex flex-col gap-5">
+              <div className="flex w-full flex-col gap-1.5">
+                <label
+                  htmlFor="item-image-upload"
+                  aria-busy={uploadingImage}
+                  className={`block overflow-hidden rounded-xl transition ${
+                    uploadingImage
+                      ? 'pointer-events-none opacity-60'
+                      : 'cursor-pointer'
+                  }`}
+                >
+                  <ItemImage
+                    src={imageUrl || null}
+                    alt={name || t('menu.item.imagePlaceholderAlt')}
+                    size="full"
+                  />
+                </label>
+                <input
+                  id="item-image-upload"
+                  type="file"
+                  accept="image/*"
+                  aria-label={t('menu.item.image')}
+                  disabled={uploadingImage}
+                  onChange={(e) => void handleFileChange(e)}
+                  className="sr-only"
                 />
-                <div className="flex min-w-0 flex-1 flex-col gap-2">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label
-                      htmlFor="item-image-upload"
-                      className={`inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-sm font-medium text-fg transition hover:bg-hover ${
-                        uploadingImage
-                          ? 'pointer-events-none opacity-60'
-                          : 'cursor-pointer'
-                      }`}
-                    >
-                      <Upload className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
-                      {uploadingImage
-                        ? t('menu.item.imageUploading')
-                        : imageUrl
-                          ? t('menu.item.imageChange')
-                          : t('menu.item.imageUpload')}
-                    </label>
-                    <input
-                      id="item-image-upload"
-                      type="file"
-                      accept="image/*"
-                      aria-label={t('menu.item.image')}
-                      disabled={uploadingImage}
-                      onChange={(e) => void handleFileChange(e)}
-                      className="sr-only"
-                    />
-                    {imageUrl && !uploadingImage && (
-                      <button
-                        type="button"
-                        onClick={removeImage}
-                        className="text-[13px] font-medium text-fg-muted transition hover:text-danger"
-                      >
-                        {t('menu.item.imageRemove')}
-                      </button>
-                    )}
-                  </div>
-                  <p
-                    className={`text-[13px] ${imageError ? 'text-danger' : 'text-fg-muted'}`}
+                {imageError && (
+                  <p className="text-[12px] text-danger">{imageError}</p>
+                )}
+                {imageUrl && !uploadingImage && (
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    className="self-start text-[12px] font-medium text-fg-muted transition hover:text-danger"
                   >
-                    {imageError ?? t('menu.item.imageHint')}
-                  </p>
+                    {t('menu.item.imageRemove')}
+                  </button>
+                )}
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-5">
+                <div>
+                  <label
+                    htmlFor="item-name"
+                    className="block text-sm font-medium text-fg"
+                  >
+                    {t('menu.item.name')}
+                  </label>
+                  <input
+                    id="item-name"
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                  />
+                </div>
+                <div>
+                  <label
+                    htmlFor="item-description"
+                    className="block text-sm font-medium text-fg"
+                  >
+                    {t('menu.item.description')}
+                  </label>
+                  <textarea
+                    id="item-description"
+                    rows={2}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                  />
                 </div>
               </div>
             </div>
@@ -381,30 +392,34 @@ export default function ItemDrawer({
               <legend className="text-sm font-medium text-fg">
                 {t('menu.item.pricing')}
               </legend>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPricingMode('single')}
-                  className={`flex-1 rounded-xl border px-3 py-2 text-sm transition ${
-                    pricingMode === 'single'
-                      ? 'border-accent bg-hover text-fg'
-                      : 'border-line text-fg-muted hover:bg-hover'
-                  }`}
-                >
-                  {t('menu.item.pricingSingle')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPricingMode('sizes')}
-                  className={`flex-1 rounded-xl border px-3 py-2 text-sm transition ${
-                    pricingMode === 'sizes'
-                      ? 'border-accent bg-hover text-fg'
-                      : 'border-line text-fg-muted hover:bg-hover'
-                  }`}
-                >
-                  {t('menu.item.pricingSizes')}
-                </button>
-              </div>
+              {/* Preço por tamanho desativado por enquanto — só preço único.
+                  Reative trocando SHOW_ADVANCED_FIELDS para true. */}
+              {SHOW_ADVANCED_FIELDS && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPricingMode('single')}
+                    className={`flex-1 rounded-xl border px-3 py-2 text-sm transition ${
+                      pricingMode === 'single'
+                        ? 'border-accent bg-hover text-fg'
+                        : 'border-line text-fg-muted hover:bg-hover'
+                    }`}
+                  >
+                    {t('menu.item.pricingSingle')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPricingMode('sizes')}
+                    className={`flex-1 rounded-xl border px-3 py-2 text-sm transition ${
+                      pricingMode === 'sizes'
+                        ? 'border-accent bg-hover text-fg'
+                        : 'border-line text-fg-muted hover:bg-hover'
+                    }`}
+                  >
+                    {t('menu.item.pricingSizes')}
+                  </button>
+                </div>
+              )}
 
               {pricingMode === 'single' ? (
                 <input
@@ -463,162 +478,227 @@ export default function ItemDrawer({
               )}
             </fieldset>
 
-            <div>
-              <p className="text-sm font-medium text-fg">
-                {t('menu.item.optionGroups')}
-              </p>
-              <div className="mt-3 flex flex-col gap-4">
-                {groups.map((group, groupIndex) => (
-                  <div
-                    key={groupIndex}
-                    className="rounded-xl border border-line p-3"
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        aria-label={t('menu.item.groupName')}
-                        placeholder={t('menu.item.groupName')}
-                        value={group.name}
-                        onChange={(e) =>
-                          patchGroup(groupIndex, { name: e.target.value })
-                        }
-                        className="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeGroup(groupIndex)}
-                        aria-label={t('menu.item.removeGroup')}
-                        className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-danger"
-                      >
-                        <Trash2 className="h-4 w-4" strokeWidth={1.75} />
-                      </button>
-                    </div>
+            {/* Grupos de adicionais desativados por enquanto (SHOW_ADVANCED_FIELDS). */}
+            {SHOW_ADVANCED_FIELDS && (
+              <div>
+                <p className="text-sm font-medium text-fg">
+                  {t('menu.item.optionGroups')}
+                </p>
+                <div className="mt-3 flex flex-col gap-4">
+                  {groups.map((group, groupIndex) => (
+                    <div
+                      key={groupIndex}
+                      className="rounded-xl border border-line p-3"
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          aria-label={t('menu.item.groupName')}
+                          placeholder={t('menu.item.groupName')}
+                          value={group.name}
+                          onChange={(e) =>
+                            patchGroup(groupIndex, { name: e.target.value })
+                          }
+                          className="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeGroup(groupIndex)}
+                          aria-label={t('menu.item.removeGroup')}
+                          className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-danger"
+                        >
+                          <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+                        </button>
+                      </div>
 
-                    <div className="mt-2 flex gap-2">
-                      <label className="flex-1 text-[13px] text-fg-muted">
-                        {t('menu.item.minSelect')}
-                        <input
-                          type="number"
-                          min={0}
-                          value={group.minSelect}
-                          onChange={(e) =>
-                            patchGroup(groupIndex, { minSelect: e.target.value })
-                          }
-                          className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                        />
-                      </label>
-                      <label className="flex-1 text-[13px] text-fg-muted">
-                        {t('menu.item.maxSelect')}
-                        <input
-                          type="number"
-                          min={1}
-                          value={group.maxSelect}
-                          onChange={(e) =>
-                            patchGroup(groupIndex, { maxSelect: e.target.value })
-                          }
-                          className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                        />
-                      </label>
-                      <div className="flex-1 text-[13px] text-fg-muted">
-                        {t('menu.item.pricingRule')}
-                        <Dropdown
-                          className="mt-1"
-                          aria-label={t('menu.item.pricingRule')}
-                          value={group.pricingRule}
-                          onChange={(v) =>
-                            patchGroup(groupIndex, { pricingRule: v as PricingRule })
-                          }
-                          options={[
-                            { value: 'sum', label: t('menu.item.pricingRuleSum') },
-                            { value: 'max', label: t('menu.item.pricingRuleMax') },
-                            { value: 'average', label: t('menu.item.pricingRuleAverage') },
-                          ]}
-                        />
+                      <div className="mt-2 flex gap-2">
+                        <label className="flex-1 text-[13px] text-fg-muted">
+                          {t('menu.item.minSelect')}
+                          <input
+                            type="number"
+                            min={0}
+                            value={group.minSelect}
+                            onChange={(e) =>
+                              patchGroup(groupIndex, {
+                                minSelect: e.target.value,
+                              })
+                            }
+                            className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                          />
+                        </label>
+                        <label className="flex-1 text-[13px] text-fg-muted">
+                          {t('menu.item.maxSelect')}
+                          <input
+                            type="number"
+                            min={1}
+                            value={group.maxSelect}
+                            onChange={(e) =>
+                              patchGroup(groupIndex, {
+                                maxSelect: e.target.value,
+                              })
+                            }
+                            className="mt-1 w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                          />
+                        </label>
+                        <div className="flex-1 text-[13px] text-fg-muted">
+                          {t('menu.item.pricingRule')}
+                          <Dropdown
+                            className="mt-1"
+                            aria-label={t('menu.item.pricingRule')}
+                            value={group.pricingRule}
+                            onChange={(v) =>
+                              patchGroup(groupIndex, {
+                                pricingRule: v as PricingRule,
+                              })
+                            }
+                            options={[
+                              {
+                                value: 'sum',
+                                label: t('menu.item.pricingRuleSum'),
+                              },
+                              {
+                                value: 'max',
+                                label: t('menu.item.pricingRuleMax'),
+                              },
+                              {
+                                value: 'average',
+                                label: t('menu.item.pricingRuleAverage'),
+                              },
+                            ]}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-col gap-2">
+                        {group.options.map((option, optionIndex) => (
+                          <div
+                            key={optionIndex}
+                            className="flex items-center gap-2"
+                          >
+                            <input
+                              type="text"
+                              aria-label={t('menu.item.optionName')}
+                              placeholder={t('menu.item.optionName')}
+                              value={option.name}
+                              onChange={(e) =>
+                                patchOption(groupIndex, optionIndex, {
+                                  name: e.target.value,
+                                })
+                              }
+                              className="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                            />
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              aria-label={t('menu.item.price')}
+                              placeholder="0,00"
+                              value={option.priceText}
+                              onChange={(e) =>
+                                patchOption(groupIndex, optionIndex, {
+                                  priceText: e.target.value,
+                                })
+                              }
+                              className="w-24 flex-none rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                removeOption(groupIndex, optionIndex)
+                              }
+                              aria-label={t('menu.item.removeOption')}
+                              className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-danger"
+                            >
+                              <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => addOption(groupIndex)}
+                          className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-[13px] font-medium text-accent transition hover:bg-hover"
+                        >
+                          <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+                          {t('menu.item.addOption')}
+                        </button>
                       </div>
                     </div>
-
-                    <div className="mt-3 flex flex-col gap-2">
-                      {group.options.map((option, optionIndex) => (
-                        <div key={optionIndex} className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            aria-label={t('menu.item.optionName')}
-                            placeholder={t('menu.item.optionName')}
-                            value={option.name}
-                            onChange={(e) =>
-                              patchOption(groupIndex, optionIndex, {
-                                name: e.target.value,
-                              })
-                            }
-                            className="min-w-0 flex-1 rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                          />
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            aria-label={t('menu.item.price')}
-                            placeholder="0,00"
-                            value={option.priceText}
-                            onChange={(e) =>
-                              patchOption(groupIndex, optionIndex, {
-                                priceText: e.target.value,
-                              })
-                            }
-                            className="w-24 flex-none rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeOption(groupIndex, optionIndex)}
-                            aria-label={t('menu.item.removeOption')}
-                            className="flex h-8 w-8 flex-none items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-danger"
-                          >
-                            <Trash2 className="h-4 w-4" strokeWidth={1.75} />
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => addOption(groupIndex)}
-                        className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-[13px] font-medium text-accent transition hover:bg-hover"
-                      >
-                        <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-                        {t('menu.item.addOption')}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addGroup}
-                  className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-[13px] font-medium text-accent transition hover:bg-hover"
-                >
-                  <Plus className="h-3.5 w-3.5" strokeWidth={2} />
-                  {t('menu.item.addGroup')}
-                </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addGroup}
+                    className="flex items-center gap-1.5 self-start rounded-lg px-2 py-1.5 text-[13px] font-medium text-accent transition hover:bg-hover"
+                  >
+                    <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+                    {t('menu.item.addGroup')}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="flex gap-4">
-              <label className="flex items-center gap-2 text-sm text-fg">
-                <input
-                  type="checkbox"
-                  checked={available}
-                  onChange={(e) => setAvailable(e.target.checked)}
-                />
-                {t('menu.item.available')}
-              </label>
-              <label className="flex items-center gap-2 text-sm text-fg">
-                <input
-                  type="checkbox"
-                  checked={active}
-                  onChange={(e) => setActive(e.target.checked)}
-                />
-                {t('menu.item.activeInMenu')}
-              </label>
-            </div>
+            {/* Disponível / No cardápio desativados por enquanto (SHOW_ADVANCED_FIELDS). */}
+            {SHOW_ADVANCED_FIELDS && (
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm text-fg">
+                  <input
+                    type="checkbox"
+                    checked={available}
+                    onChange={(e) => setAvailable(e.target.checked)}
+                  />
+                  {t('menu.item.available')}
+                </label>
+                <label className="flex items-center gap-2 text-sm text-fg">
+                  <input
+                    type="checkbox"
+                    checked={active}
+                    onChange={(e) => setActive(e.target.checked)}
+                  />
+                  {t('menu.item.activeInMenu')}
+                </label>
+              </div>
+            )}
           </div>
         </div>
 
-        <footer className="flex items-center justify-end gap-2 border-t border-line px-6 py-4">
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-4 py-3 md:px-6 md:py-4">
+          {item && onDelete && (
+            <div className="mr-auto flex items-center gap-2">
+              {confirmingDelete ? (
+                <>
+                  <span className="text-[13px] text-fg-muted">
+                    {t('menu.item.confirmDelete')}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => {
+                      setDeleting(true);
+                      void onDelete().finally(() => {
+                        setDeleting(false);
+                        setConfirmingDelete(false);
+                      });
+                    }}
+                    className="rounded-xl bg-danger px-3 py-2 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-60"
+                  >
+                    {t('menu.item.confirmDeleteYes')}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  aria-label={t('menu.item.delete')}
+                  title={t('menu.item.delete')}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-fg-muted transition hover:bg-hover hover:text-danger"
+                >
+                  <Trash2
+                    className="h-4 w-4"
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                  />
+                </button>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={onClose}

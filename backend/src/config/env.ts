@@ -25,9 +25,83 @@ export interface Env {
    * do que deixar a mensagem sem resposta por minutos.
    */
   ollamaTimeoutMs: number;
+  llm: LlmEnv;
+  /**
+   * Base pública do frontend, onde vive a página do cardápio (`/c/<token>`).
+   * Vazia em produção = `send_menu_link` indisponível e o agente pede pelo chat.
+   */
+  publicAppUrl: string;
   jwtSecret: string;
   jwtExpiresInSeconds: number;
   whatsapp: WhatsAppEnv;
+  osm: OsmEnv;
+  google: GoogleEnv;
+}
+
+export const LLM_PROVIDERS = [
+  "ollama",
+  "anthropic",
+  "openai",
+  "gemini",
+] as const;
+export type LlmProvider = (typeof LLM_PROVIDERS)[number];
+
+/**
+ * Provedor do modelo do agente. Ollama é o default de dev; tool calling com
+ * modelo pequeno local é instável, então o piloto com restaurante real usa um
+ * modelo hospedado (`anthropic` ou `openai`). `timeoutMs` vale POR chamada ao
+ * modelo; o laço de ferramentas tem um prazo total próprio (ver `agent.loop`).
+ */
+export interface LlmEnv {
+  provider: LlmProvider;
+  model: string;
+  timeoutMs: number;
+  anthropicApiKey: string;
+  openaiApiKey: string;
+  geminiApiKey: string;
+}
+
+const DEFAULT_MODEL_BY_PROVIDER: Record<LlmProvider, string> = {
+  ollama: process.env.OLLAMA_MODEL || "llama3.2",
+  anthropic: "claude-sonnet-5-5",
+  openai: "gpt-4o-mini",
+  gemini: "gemini-2.5-flash",
+};
+
+function parseLlmProvider(raw: string | undefined): LlmProvider {
+  const value = (raw || "ollama").trim().toLowerCase();
+  if ((LLM_PROVIDERS as readonly string[]).includes(value)) {
+    return value as LlmProvider;
+  }
+  throw new Error(
+    `LLM_PROVIDER inválido: "${raw}". Use ${LLM_PROVIDERS.join(", ")}.`,
+  );
+}
+
+const llmProvider = parseLlmProvider(process.env.LLM_PROVIDER);
+
+/**
+ * OpenStreetMap — contorno da cidade e dos bairros atendidos (aba Entrega).
+ * Só é chamado quando o dono escolhe/troca a cidade; o resultado fica salvo
+ * em `store_geo`, então nada disso está no caminho de uma resposta ao cliente.
+ * Nominatim e Overpass exigem um User-Agent identificável.
+ */
+export interface OsmEnv {
+  nominatimUrl: string;
+  /** Tentados em ordem — instâncias públicas do Overpass vivem ocupadas. */
+  overpassUrls: string[];
+  userAgent: string;
+  timeoutMs: number;
+}
+
+/**
+ * Google Geocoding — botão "Localizar pelo endereço" (aba Geral). Chave de
+ * SERVIDOR (restrita por IP), separada da chave de navegador do mapa. Sem ela,
+ * a busca responde `geo_unavailable`; o resto do painel segue funcionando.
+ */
+export interface GoogleEnv {
+  geocodingApiKey: string;
+  timeoutMs: number;
 }
 
 /**
@@ -54,6 +128,20 @@ export const env: Env = {
   ollamaBaseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
   ollamaModel: process.env.OLLAMA_MODEL || "llama3.2",
   ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS || 30000),
+  publicAppUrl: (
+    process.env.PUBLIC_APP_URL ||
+    (process.env.NODE_ENV === "production" ? "" : "http://localhost:5173")
+  ).replace(/\/+$/, ""),
+  llm: {
+    provider: llmProvider,
+    model: process.env.LLM_MODEL || DEFAULT_MODEL_BY_PROVIDER[llmProvider],
+    timeoutMs: Number(
+      process.env.LLM_TIMEOUT_MS || process.env.OLLAMA_TIMEOUT_MS || 30000,
+    ),
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+    openaiApiKey: process.env.OPENAI_API_KEY || "",
+    geminiApiKey: process.env.GEMINI_API_KEY || "",
+  },
   jwtSecret: process.env.JWT_SECRET || DEV_JWT_SECRET,
   jwtExpiresInSeconds: Number(
     process.env.JWT_EXPIRES_IN_SECONDS || 8 * 60 * 60,
@@ -64,6 +152,23 @@ export const env: Env = {
     accessToken: process.env.WHATSAPP_ACCESS_TOKEN || "",
     graphApiVersion: process.env.WHATSAPP_GRAPH_API_VERSION || "v23.0",
     timeoutMs: Number(process.env.WHATSAPP_TIMEOUT_MS || 10000),
+  },
+  osm: {
+    nominatimUrl:
+      process.env.OSM_NOMINATIM_URL || "https://nominatim.openstreetmap.org",
+    overpassUrls: (
+      process.env.OSM_OVERPASS_URLS ||
+      "https://overpass-api.de/api/interpreter,https://overpass.kumi.systems/api/interpreter"
+    )
+      .split(",")
+      .map((u) => u.trim())
+      .filter(Boolean),
+    userAgent: process.env.OSM_USER_AGENT || "attendant/1.0 (restaurant panel)",
+    timeoutMs: Number(process.env.OSM_TIMEOUT_MS || 60000),
+  },
+  google: {
+    geocodingApiKey: process.env.GOOGLE_GEOCODING_API_KEY || "",
+    timeoutMs: Number(process.env.GOOGLE_TIMEOUT_MS || 10000),
   },
 };
 

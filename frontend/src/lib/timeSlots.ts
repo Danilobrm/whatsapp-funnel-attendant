@@ -24,10 +24,10 @@ export function minutesToLabel(minutes: number): string {
   const wrapped = wrapMinutes(minutes);
   const h = Math.floor(wrapped / 60);
   const m = wrapped % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 export function labelToMinutes(label: string): number {
-  const [h, m] = label.split(":").map(Number);
+  const [h, m] = label.split(':').map(Number);
   return (h ?? 0) * 60 + (m ?? 0);
 }

@@ -30,6 +30,13 @@ export type InvalidMenuCode =
   | "neighborhood_required"
   | "fee_invalid"
   | "zone_not_found"
+  | "restaurant_name_too_long"
+  | "email_invalid"
+  | "address_too_long"
+  | "location_invalid"
+  | "whatsapp_number_invalid"
+  | "city_required"
+  | "city_not_found"
   | "image_required"
   | "image_invalid_type"
   | "image_too_large";

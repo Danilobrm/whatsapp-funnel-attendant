@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ImageOff } from 'lucide-react';
 
-import { API_BASE_URL } from '../../../api/client';
+import { API_BASE_URL } from '../../../api/client/client.ts';
 
-type ItemImageSize = 'sm' | 'md';
+type ItemImageSize = 'sm' | 'md' | 'full' | 'cover';
 
 /**
  * `image_url` do backend é relativo (`/produtos/x.png`) — em dev, front e
@@ -26,15 +26,24 @@ interface ItemImageProps {
 const SIZE_CLASSES: Record<ItemImageSize, string> = {
   sm: 'h-14 w-14',
   md: 'h-24 w-24',
+  full: 'aspect-square w-full',
+  cover: 'aspect-[4/3] w-full',
 };
 
 const ICON_CLASSES: Record<ItemImageSize, string> = {
   sm: 'h-5 w-5',
   md: 'h-8 w-8',
+  full: 'h-12 w-12',
+  cover: 'h-10 w-10',
 };
 
 /** Foto do item, com fallback pra ícone quando não há `src` ou o link quebrou. */
-export default function ItemImage({ src, alt, size = 'sm', className = '' }: ItemImageProps) {
+export default function ItemImage({
+  src,
+  alt,
+  size = 'sm',
+  className = '',
+}: ItemImageProps) {
   const [errored, setErrored] = useState(false);
 
   // Reseta o erro quando o link muda (edição de outro item reusa a instância).
@@ -52,7 +61,11 @@ export default function ItemImage({ src, alt, size = 'sm', className = '' }: Ite
         aria-label={alt}
         className={`flex ${sizeClass} flex-none items-center justify-center rounded-xl bg-hover text-fg-subtle ${className}`}
       >
-        <ImageOff className={ICON_CLASSES[size]} strokeWidth={1.5} aria-hidden="true" />
+        <ImageOff
+          className={ICON_CLASSES[size]}
+          strokeWidth={1.5}
+          aria-hidden="true"
+        />
       </div>
     );
   }

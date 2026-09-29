@@ -232,6 +232,16 @@ CREATE TABLE IF NOT EXISTS store_settings (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Informações do restaurante (aba Geral). Nome exibido pode diferir do nome
+-- interno do tenant; foto usa o mesmo upload das fotos do cardápio.
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS restaurant_name VARCHAR(120);
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS logo_url TEXT;
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS contact_email VARCHAR(254);
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS address TEXT;
+-- Pino do restaurante no mapa (aba Geral). Os dois juntos ou nenhum.
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+
 CREATE TABLE IF NOT EXISTS delivery_zones (
     id SERIAL PRIMARY KEY,
     tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -247,3 +257,172 @@ CREATE TABLE IF NOT EXISTS delivery_zones (
 
 CREATE INDEX IF NOT EXISTS idx_delivery_zones_tenant
     ON delivery_zones (tenant_id, active);
+
+-- Cidade atendida + contornos do OpenStreetMap (aba Entrega). Buscado uma vez
+-- quando o dono escolhe a cidade e guardado aqui: o mapa do painel não depende
+-- do Nominatim/Overpass estarem de pé. Coordenadas GeoJSON ([lon, lat]).
+CREATE TABLE IF NOT EXISTS store_geo (
+    tenant_id INT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+    city_osm_id BIGINT NOT NULL,
+    city_name VARCHAR(160) NOT NULL,
+    state VARCHAR(80),
+    city_geometry JSONB NOT NULL,
+    neighborhoods JSONB NOT NULL DEFAULT '[]'::jsonb,
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ===========================================================================
+-- Pedidos (Fase 3)
+--
+-- `order_items` é SNAPSHOT: nome e preço do momento do pedido. Editar o
+-- cardápio depois não altera pedido antigo. Dinheiro sempre em centavos.
+-- Cliente: `customers` só nasce na Fase 2; até lá o pedido guarda nome e
+-- telefone do cliente como snapshot (`customer_id` entra via ADD COLUMN).
+-- ===========================================================================
+DO $$ BEGIN
+    CREATE TYPE order_status_enum AS ENUM (
+        'pending', 'accepted', 'rejected', 'out_for_delivery',
+        'ready_for_pickup', 'completed', 'cancelled'
+    );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+    CREATE TYPE fulfillment_enum AS ENUM ('delivery', 'pickup');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Número do pedido por tenant ("pedido 42"). Contador atômico em vez de
+-- MAX(number)+1: dois pedidos simultâneos nunca recebem o mesmo número.
+CREATE TABLE IF NOT EXISTS order_counters (
+    tenant_id INT PRIMARY KEY REFERENCES tenants(id) ON DELETE CASCADE,
+    last_number INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+    id SERIAL PRIMARY KEY,
+    tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    number INT NOT NULL,
+    -- Conversa de onde o pedido veio (mensagens de status vão para ela).
+    -- SET NULL: apagar a conversa (reiniciar o simulador) não apaga o pedido.
+    conversation_id INT REFERENCES conversations(id) ON DELETE SET NULL,
+    customer_name VARCHAR(160) NOT NULL,
+    customer_phone VARCHAR(32),
+    status order_status_enum NOT NULL DEFAULT 'pending',
+    fulfillment fulfillment_enum NOT NULL,
+    address JSONB,
+    neighborhood VARCHAR(120),
+    payment_method VARCHAR(32) NOT NULL,
+    change_for_cents INT,
+    subtotal_cents INT NOT NULL,
+    fee_cents INT NOT NULL DEFAULT 0,
+    total_cents INT NOT NULL,
+    notes TEXT,
+    reject_reason VARCHAR(32),
+    reject_note TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    accepted_at TIMESTAMPTZ,
+    ready_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_orders_number UNIQUE (tenant_id, number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_tenant_status
+    ON orders (tenant_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS order_items (
+    id SERIAL PRIMARY KEY,
+    tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    order_id INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    name VARCHAR(160) NOT NULL,
+    size_name VARCHAR(80),
+    unit_price_cents INT NOT NULL,
+    quantity INT NOT NULL,
+    -- [{ "group": "Borda", "name": "Catupiry", "priceCents": 800 }]
+    options JSONB NOT NULL DEFAULT '[]'::jsonb,
+    notes TEXT,
+    position INT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_items_order
+    ON order_items (tenant_id, order_id);
+
+-- ===========================================================================
+-- Agente com ferramentas (Fase 2): clientes e carrinhos
+-- ===========================================================================
+
+-- Um cliente por telefone e por tenant. Criado/atualizado a cada conversa
+-- (WhatsApp: wa_id; simulador: telefone fictício do cliente de teste).
+-- `last_address` alimenta "entrega no mesmo endereço?".
+CREATE TABLE IF NOT EXISTS customers (
+    id SERIAL PRIMARY KEY,
+    tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    phone VARCHAR(32) NOT NULL,
+    name VARCHAR(160),
+    -- { "street", "number", "complement", "reference", "neighborhood" }
+    last_address JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_customers_phone UNIQUE (tenant_id, phone)
+);
+
+-- O pedido aponta para o cliente, mas continua guardando nome/telefone como
+-- snapshot. SET NULL: apagar o cliente (LGPD) não apaga o histórico do balcão.
+ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS customer_id INT REFERENCES customers(id) ON DELETE SET NULL;
+
+-- Uma conversa, um carrinho. Itens guardam SÓ ids (item, tamanho, opções) e
+-- quantidade — o preço é recalculado do cardápio a cada leitura, então item
+-- que esgota entre a adição e a confirmação é pego pelo `priceCart`.
+-- Sem atividade por 3h o carrinho é descartado na leitura (sem job).
+CREATE TABLE IF NOT EXISTS carts (
+    conversation_id INT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+    tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    items JSONB NOT NULL DEFAULT '[]'::jsonb,
+    fulfillment fulfillment_enum,
+    address JSONB,
+    zone_id INT REFERENCES delivery_zones(id) ON DELETE SET NULL,
+    payment_method VARCHAR(32),
+    change_for_cents INT,
+    notes TEXT,
+    status VARCHAR(32) NOT NULL DEFAULT 'open',
+    -- Hash do carrinho no instante em que o resumo foi enviado ao cliente.
+    summary_hash VARCHAR(64),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_carts_tenant ON carts (tenant_id);
+
+-- ===========================================================================
+-- Cardápio em link (Fase 2.5)
+-- ===========================================================================
+
+-- Número do WhatsApp do atendimento (só dígitos, com DDI): é para onde o
+-- "Voltar ao WhatsApp" da página do cardápio aponta (wa.me/<número>).
+ALTER TABLE store_settings ADD COLUMN IF NOT EXISTS whatsapp_number VARCHAR(20);
+
+-- Funil do link: sent → opened → confirmed → ordered. Uma linha por evento;
+-- a contagem é por conversa DISTINTA, então abrir o link 5x conta 1.
+CREATE TABLE IF NOT EXISTS menu_link_events (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    conversation_id INT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    event VARCHAR(16) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_menu_link_events_tenant_created
+    ON menu_link_events (tenant_id, created_at DESC);
+
+-- Link do cardápio: código curto e aleatório (`/c/<código>`) que aponta para
+-- a conversa. Tenant, conversa e validade moram AQUI, não na URL — link curto
+-- e revogável. ON DELETE CASCADE: apagar a conversa (reiniciar o simulador)
+-- invalida o link.
+CREATE TABLE IF NOT EXISTS menu_links (
+    code VARCHAR(32) PRIMARY KEY,
+    tenant_id INT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    conversation_id INT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_menu_links_conversation
+    ON menu_links (tenant_id, conversation_id, expires_at DESC);

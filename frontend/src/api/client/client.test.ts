@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AUTH_TOKEN_STORAGE_KEY } from '../authToken';
+import { AUTH_TOKEN_STORAGE_KEY } from '../authToken/authToken.ts';
 import {
   ApiError,
   API_BASE_URL,

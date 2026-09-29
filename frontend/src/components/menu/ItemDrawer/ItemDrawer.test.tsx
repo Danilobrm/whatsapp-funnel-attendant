@@ -4,14 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders, screen } from '../../../test/render.tsx';
 import ItemDrawer from './ItemDrawer.tsx';
 
-vi.mock('../../../api/menu', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../api/menu')>();
+vi.mock('../../../api/menu/menu.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/menu/menu.ts')>();
   return { ...actual, uploadItemImage: vi.fn() };
 });
 
-import { uploadItemImage, MenuRejectedError } from '../../../api/menu';
+import { uploadItemImage, MenuRejectedError } from '../../../api/menu/menu.ts';
 
-import type { MenuCategory, MenuItem } from '../../../api/menu';
+import type { MenuCategory, MenuItem } from '../../../api/menu/menu.ts';
 
 const uploadMock = vi.mocked(uploadItemImage);
 
@@ -28,7 +28,9 @@ const CATEGORIES: MenuCategory[] = [
   { id: 2, name: 'Bebidas', position: 1, active: true, items: [] },
 ];
 
-function renderDrawer(overrides: Partial<Parameters<typeof ItemDrawer>[0]> = {}) {
+function renderDrawer(
+  overrides: Partial<Parameters<typeof ItemDrawer>[0]> = {},
+) {
   const onSave = vi.fn().mockResolvedValue(undefined);
   const onClose = vi.fn();
   renderWithProviders(
@@ -82,6 +84,9 @@ describe('ItemDrawer — creating an item', () => {
     );
   });
 
+  // Tamanhos e grupos de adicionais estão ocultos (SHOW_ADVANCED_FIELDS = false).
+  // Ao reativar, descomente os testes abaixo.
+  /*
   it('switches to sizes and sends them instead of a single price', async () => {
     const { onSave } = renderDrawer();
 
@@ -147,6 +152,18 @@ describe('ItemDrawer — creating an item', () => {
       }),
     );
   });
+  */
+
+  it('hides sizes, option groups and the available/active toggles', () => {
+    renderDrawer();
+    expect(screen.getByLabelText('Preço')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Por tamanho' }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Grupos de adicionais')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.queryByText(/JPG, PNG/)).not.toBeInTheDocument();
+  });
 
   it('shows the translated error when saving is rejected', async () => {
     const onSave = vi.fn().mockRejectedValue({ code: 'name_required' });
@@ -162,7 +179,39 @@ describe('ItemDrawer — creating an item', () => {
   it('shows the placeholder icon with no image', () => {
     renderDrawer();
     expect(screen.getByRole('img', { name: 'Sem imagem' })).toBeInTheDocument();
-    expect(screen.getByText('Enviar foto')).toBeInTheDocument();
+    expect(screen.queryByText('Enviar foto')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Remover' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('orders the fields category → image → name → description', () => {
+    renderDrawer();
+    const order = [
+      screen.getByText('Categoria'),
+      screen.getByRole('img', { name: 'Sem imagem' }),
+      screen.getByLabelText('Nome'),
+      screen.getByLabelText('Descrição'),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(
+        order[i - 1]!.compareDocumentPosition(order[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
+  it('makes the picture itself the upload trigger', () => {
+    renderDrawer();
+    const picture = screen.getByRole('img', { name: 'Sem imagem' });
+    expect(picture).toHaveClass('w-full', 'aspect-square');
+
+    const trigger = picture.closest('label');
+    expect(trigger).toHaveAttribute('for', 'item-image-upload');
+    expect(screen.getByLabelText('Imagem')).toHaveAttribute(
+      'id',
+      'item-image-upload',
+    );
   });
 
   it('uploads the chosen file and saves with the returned URL', async () => {
@@ -176,11 +225,9 @@ describe('ItemDrawer — creating an item', () => {
     await userEvent.upload(screen.getByLabelText('Imagem'), file);
 
     expect(uploadMock).toHaveBeenCalledWith(file);
-    await screen.findByText('Trocar foto');
-    expect(screen.getByRole('img', { name: 'Calabresa' })).toHaveAttribute(
-      'src',
-      'http://localhost:3000/produtos/abc.png',
-    );
+    expect(
+      await screen.findByRole('img', { name: 'Calabresa' }),
+    ).toHaveAttribute('src', 'http://localhost:3000/produtos/abc.png');
 
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
@@ -195,7 +242,10 @@ describe('ItemDrawer — creating an item', () => {
     );
     renderDrawer();
 
-    await userEvent.upload(screen.getByLabelText('Imagem'), pngFile('foto.txt'));
+    await userEvent.upload(
+      screen.getByLabelText('Imagem'),
+      pngFile('foto.txt'),
+    );
 
     expect(
       await screen.findByText(
@@ -209,11 +259,13 @@ describe('ItemDrawer — creating an item', () => {
     renderDrawer();
 
     await userEvent.upload(screen.getByLabelText('Imagem'), pngFile());
-    await screen.findByText('Trocar foto');
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Remover' }),
+    );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Remover' }));
-
-    expect(screen.getByText('Enviar foto')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Sem imagem' }).tagName).not.toBe(
+      'IMG',
+    );
   });
 });
 
@@ -242,6 +294,39 @@ describe('ItemDrawer — editing an item', () => {
       'src',
       'https://example.com/suco.jpg',
     );
-    expect(screen.getByText('Trocar foto')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remover' })).toBeInTheDocument();
+  });
+});
+
+describe('ItemDrawer — exclusão', () => {
+  const ITEM = {
+    id: 5,
+    categoryId: 1,
+    name: 'Calabresa',
+    description: null,
+    priceCents: 4500,
+    imageUrl: null,
+    available: true,
+    active: true,
+    position: 0,
+    sizes: [],
+    optionGroups: [],
+  };
+
+  it('does not offer delete for a new item', () => {
+    renderDrawer({ onDelete: vi.fn() });
+    expect(
+      screen.queryByRole('button', { name: 'Excluir item' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('asks for confirmation before deleting the open item', async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    renderDrawer({ item: ITEM, onDelete });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Excluir item' }));
+    expect(onDelete).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Sim, excluir' }));
+    expect(onDelete).toHaveBeenCalledTimes(1);
   });
 });

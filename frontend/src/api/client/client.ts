@@ -1,4 +1,4 @@
-import { getAuthToken } from '../authToken';
+import { getAuthToken } from '../authToken/authToken.ts';
 
 /**
  * O fallback é o que mantém verdes as asserções de URL nos testes existentes:
@@ -59,6 +59,14 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   unauthorizedHandler = fn;
 }
 
+/**
+ * Dispara o logout global de fora do `request()` — usado pelo stream de
+ * pedidos, que faz `fetch` direto (precisa ler o corpo aos pedaços).
+ */
+export function notifyUnauthorized(): void {
+  unauthorizedHandler?.();
+}
+
 async function readJson(response: Response): Promise<unknown> {
   return response.json().catch(() => null);
 }
@@ -89,7 +97,9 @@ export async function request<T>(
     method,
     headers,
     ...(signal ? { signal } : {}),
-    ...(body === undefined ? {} : { body: isFormData ? body : JSON.stringify(body) }),
+    ...(body === undefined
+      ? {}
+      : { body: isFormData ? body : JSON.stringify(body) }),
   });
 
   // onStatus ANTES de `response.ok`: o mapper recebe o corpo já

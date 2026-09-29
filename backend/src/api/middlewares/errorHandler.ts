@@ -5,11 +5,21 @@ import type { ErrorRequestHandler } from "express";
 import {
   ForbiddenError,
   UnauthorizedError,
-} from "../../modules/auth/auth.errors.js";
+} from "../../modules/auth/errors/auth.errors.js";
 import { InvalidInputError } from "../../modules/errors/invalidInput.error.js";
 import { InvalidMenuError } from "../../modules/errors/invalidMenu.error.js";
-import { InvalidSettingsError } from "../../modules/settings/settings.service.js";
-import { TenantNotFoundError } from "../../modules/tenants/tenant.service.js";
+import { GeoUnavailableError } from "../../modules/geo/errors/geo.errors.js";
+import {
+  InvalidPublicCartError,
+  RateLimitedError,
+} from "../../modules/menulink/errors/menuLink.errors.js";
+import {
+  InvalidOrderError,
+  InvalidTransitionError,
+  OrderNotFoundError,
+} from "../../modules/order/errors/order.errors.js";
+import { InvalidSettingsError } from "../../modules/settings/services/settings.service.js";
+import { TenantNotFoundError } from "../../modules/tenants/services/tenant.service.js";
 
 export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   // Os três branches de auth NÃO devolvem `message`, ao contrário do 500 lá
@@ -68,6 +78,68 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
       status: "invalid",
       code: error.code,
       field: error.field,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // Carrinho da página do cardápio recusado: `problems` diz o que há de errado
+  // em cada linha; a página traduz por `publicMenu.errors.<code>`.
+  if (error instanceof InvalidPublicCartError) {
+    res.status(422).json({
+      status: "invalid",
+      code: error.code,
+      problems: error.problems,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  if (error instanceof RateLimitedError) {
+    res.status(429).json({
+      status: "rate_limited",
+      code: error.code,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  if (error instanceof OrderNotFoundError) {
+    res.status(404).json({
+      status: "not_found",
+      code: error.code,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // O pedido existe, mas o status atual não permite (ou outra aba mudou antes).
+  if (error instanceof InvalidTransitionError) {
+    res.status(409).json({
+      status: "conflict",
+      code: error.code,
+      from: error.from,
+      to: error.to,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  if (error instanceof InvalidOrderError) {
+    res.status(422).json({
+      status: "invalid",
+      code: error.code,
+      field: error.field,
+      checkedAt: new Date().toISOString(),
+    });
+    return;
+  }
+
+  // Provedor externo (OpenStreetMap) falhou — não é culpa da entrada.
+  if (error instanceof GeoUnavailableError) {
+    res.status(502).json({
+      status: "unavailable",
+      code: error.code,
       checkedAt: new Date().toISOString(),
     });
     return;

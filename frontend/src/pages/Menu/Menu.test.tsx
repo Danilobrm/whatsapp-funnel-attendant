@@ -3,30 +3,33 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders, screen, waitFor } from '../../test/render.tsx';
 
-vi.mock('../../api/menu', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/menu')>();
+vi.mock('../../api/menu/menu.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/menu/menu.ts')>();
   return {
     ...actual,
     fetchMenu: vi.fn(),
     createCategory: vi.fn(),
+    deleteCategory: vi.fn(),
     createItem: vi.fn(),
-    setItemAvailability: vi.fn(),
+    deleteItem: vi.fn(),
   };
 });
 
 import {
   createCategory,
   createItem,
+  deleteCategory,
+  deleteItem,
   fetchMenu,
-  setItemAvailability,
-} from '../../api/menu';
+} from '../../api/menu/menu.ts';
 
 import Menu from './Menu.tsx';
 
 const fetchMock = vi.mocked(fetchMenu);
 const createCategoryMock = vi.mocked(createCategory);
 const createItemMock = vi.mocked(createItem);
-const setAvailabilityMock = vi.mocked(setItemAvailability);
+const deleteCategoryMock = vi.mocked(deleteCategory);
+const deleteItemMock = vi.mocked(deleteItem);
 
 const MENU = [
   {
@@ -53,7 +56,7 @@ const MENU = [
 ];
 
 function renderPage() {
-  return renderWithProviders(<Menu />);
+  return renderWithProviders(<Menu />, { route: '/admin/store/menu' });
 }
 
 beforeEach(() => {
@@ -66,8 +69,22 @@ describe('Menu — loading', () => {
     fetchMock.mockReturnValue(new Promise(() => {}));
     renderPage();
 
-    expect(screen.getByText('Cardápio')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Cardápio' }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId('menu-skeleton')).toBeInTheDocument();
+  });
+
+  it('is its own page: no Loja tabs on top', () => {
+    fetchMock.mockReturnValue(new Promise(() => {}));
+    renderPage();
+
+    expect(
+      screen.getByRole('heading', { name: 'Cardápio' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Geral' }),
+    ).not.toBeInTheDocument();
   });
 
   it('shows an error when the menu cannot be loaded', async () => {
@@ -81,13 +98,46 @@ describe('Menu — loading', () => {
 });
 
 describe('Menu — categories and items', () => {
-  it('renders the category and its item with the price', async () => {
+  it('shows every item under "Todos" and the chips', async () => {
     renderPage();
 
-    expect(await screen.findByDisplayValue('Pizzas')).toBeInTheDocument();
-    expect(screen.getByText('Calabresa')).toBeInTheDocument();
+    expect(await screen.findByText('Calabresa')).toBeInTheDocument();
     expect(screen.getByText('R$ 45,00')).toBeInTheDocument();
-    expect(screen.getByText('1 item')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Todos 1 item' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole('button', { name: 'Pizzas 1 item' }),
+    ).toBeInTheDocument();
+    // Sem categoria selecionada não há barra de edição.
+    expect(
+      screen.queryByLabelText('Nome da categoria'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('selecting a category chip shows its toolbar and filters the grid', async () => {
+    fetchMock.mockResolvedValue({
+      menu: [
+        ...structuredClone(MENU),
+        {
+          id: 2,
+          name: 'Bebidas',
+          position: 1,
+          active: true,
+          items: [
+            { ...MENU[0]!.items[0]!, id: 20, categoryId: 2, name: 'Guaraná' },
+          ],
+        },
+      ],
+    });
+    renderPage();
+    await screen.findByText('Guaraná');
+
+    await userEvent.click(screen.getByRole('button', { name: /^Bebidas/ }));
+
+    expect(screen.getByDisplayValue('Bebidas')).toBeInTheDocument();
+    expect(screen.getByText('Guaraná')).toBeInTheDocument();
+    expect(screen.queryByText('Calabresa')).not.toBeInTheDocument();
   });
 
   it('shows the empty-category message when a category has no items', async () => {
@@ -96,27 +146,74 @@ describe('Menu — categories and items', () => {
     });
     renderPage();
 
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^Bebidas/ }),
+    );
     expect(
-      await screen.findByText('Nenhum item nesta categoria ainda.'),
+      screen.getByText('Nenhum item nesta categoria ainda.'),
     ).toBeInTheDocument();
   });
 
-  it('toggles item availability', async () => {
+  it('shows the empty-menu message when there are no categories', async () => {
+    fetchMock.mockResolvedValue({ menu: [] });
     renderPage();
-    await screen.findByText('Calabresa');
 
-    await userEvent.click(screen.getByRole('switch', { name: 'Disponível' }));
+    expect(
+      await screen.findByText(
+        'Nenhuma categoria ainda. Crie a primeira acima.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Adicionar item' }),
+    ).not.toBeInTheDocument();
+  });
 
-    expect(setAvailabilityMock).toHaveBeenCalledWith(10, false);
+  it('goes back to "Todos" after deleting the selected category', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    deleteCategoryMock.mockResolvedValue(undefined);
+    renderPage();
+    await userEvent.click(
+      await screen.findByRole('button', { name: /^Pizzas/ }),
+    );
+
+    fetchMock.mockResolvedValue({ menu: [] });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Excluir categoria' }),
+    );
+
+    await waitFor(() => expect(deleteCategoryMock).toHaveBeenCalledWith(1));
+    expect(
+      await screen.findByRole('button', { name: 'Todos 0 itens' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('deletes an item from inside its drawer, after confirming', async () => {
+    deleteItemMock.mockResolvedValue(undefined);
+    renderPage();
+    await userEvent.click(await screen.findByText('Calabresa'));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Excluir item' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Sim, excluir' }));
+
+    await waitFor(() => expect(deleteItemMock).toHaveBeenCalledWith(10));
   });
 
   it('adds a new category', async () => {
     createCategoryMock.mockResolvedValue({
-      category: { id: 2, name: 'Bebidas', position: 1, active: true, items: [] },
+      category: {
+        id: 2,
+        name: 'Bebidas',
+        position: 1,
+        active: true,
+        items: [],
+      },
     });
     renderPage();
-    await screen.findByDisplayValue('Pizzas');
+    await screen.findByText('Calabresa');
 
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar categoria' }),
+    );
     await userEvent.type(
       screen.getByPlaceholderText('Nova categoria (ex.: Pizzas)'),
       'Bebidas',
@@ -132,6 +229,40 @@ describe('Menu — categories and items', () => {
     );
   });
 
+  it('selects the category right after creating it', async () => {
+    createCategoryMock.mockResolvedValue({
+      category: {
+        id: 2,
+        name: 'Bebidas',
+        position: 1,
+        active: true,
+        items: [],
+      },
+    });
+    renderPage();
+    await screen.findByText('Calabresa');
+
+    fetchMock.mockResolvedValue({
+      menu: [
+        ...structuredClone(MENU),
+        { id: 2, name: 'Bebidas', position: 1, active: true, items: [] },
+      ],
+    });
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar categoria' }),
+    );
+    await userEvent.type(
+      screen.getByPlaceholderText('Nova categoria (ex.: Pizzas)'),
+      'Bebidas{Enter}',
+    );
+
+    expect(await screen.findByDisplayValue('Bebidas')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Bebidas/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
   it('opens the drawer and creates an item', async () => {
     createItemMock.mockResolvedValue({
       item: { ...MENU[0]!.items[0]!, id: 11, name: 'Marguerita' },
@@ -139,7 +270,9 @@ describe('Menu — categories and items', () => {
     renderPage();
     await screen.findByText('Calabresa');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Adicionar item' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Adicionar item' }),
+    );
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText('Nome'), 'Marguerita');

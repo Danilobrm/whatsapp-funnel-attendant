@@ -1,7 +1,7 @@
 import { pool } from "../config/db.js";
 import { runMigrations } from "../config/migrate.js";
-import { hashPassword } from "../modules/auth/password.js";
-import { normalizeNeighborhood } from "../modules/store/neighborhood.js";
+import { hashPassword } from "../modules/auth/utils/password.js";
+import { normalizeNeighborhood } from "../modules/store/utils/neighborhood.js";
 
 import type { PoolClient } from "pg";
 
@@ -64,7 +64,12 @@ async function seedStore(client: PoolClient, tenantId: number): Promise<void> {
     await client.query(
       `INSERT INTO delivery_zones (tenant_id, neighborhood, neighborhood_key, fee_cents, active)
        VALUES ($1, $2, $3, $4, true)`,
-      [tenantId, zone.neighborhood, normalizeNeighborhood(zone.neighborhood), zone.feeCents],
+      [
+        tenantId,
+        zone.neighborhood,
+        normalizeNeighborhood(zone.neighborhood),
+        zone.feeCents,
+      ],
     );
   }
 }
@@ -155,7 +160,10 @@ const MENU: Array<{ category: string; items: SeedItem[] }> = [
         name: "Pizza Quatro Queijos",
         description: "Mussarela, provolone, parmesão e gorgonzola.",
         priceCents: null,
-        sizes: PIZZA_SIZES.map((s) => ({ ...s, priceCents: s.priceCents + 500 })),
+        sizes: PIZZA_SIZES.map((s) => ({
+          ...s,
+          priceCents: s.priceCents + 500,
+        })),
         optionGroups: [BORDA_GROUP],
       },
       {
@@ -195,13 +203,15 @@ const MENU: Array<{ category: string; items: SeedItem[] }> = [
       },
       {
         name: "X-Salada",
-        description: "Pão, hambúrguer, queijo, alface, tomate e maionese da casa.",
+        description:
+          "Pão, hambúrguer, queijo, alface, tomate e maionese da casa.",
         priceCents: 2000,
         optionGroups: [ADICIONAIS_GROUP],
       },
       {
         name: "X-Tudo",
-        description: "Pão, dois hambúrgueres, queijo, bacon, ovo, alface e tomate.",
+        description:
+          "Pão, dois hambúrgueres, queijo, bacon, ovo, alface e tomate.",
         priceCents: 2500,
         optionGroups: [ADICIONAIS_GROUP],
       },
@@ -212,8 +222,16 @@ const MENU: Array<{ category: string; items: SeedItem[] }> = [
     items: [
       { name: "Água Mineral", description: "500ml.", priceCents: 400 },
       { name: "Refrigerante Lata", description: "350ml.", priceCents: 600 },
-      { name: "Refrigerante 2L", description: "Para dividir.", priceCents: 1200 },
-      { name: "Suco Natural", description: "Polpa de fruta, 400ml.", priceCents: 900 },
+      {
+        name: "Refrigerante 2L",
+        description: "Para dividir.",
+        priceCents: 1200,
+      },
+      {
+        name: "Suco Natural",
+        description: "Polpa de fruta, 400ml.",
+        priceCents: 900,
+      },
     ],
   },
 ];
@@ -234,7 +252,14 @@ async function seedMenu(client: PoolClient, tenantId: number): Promise<void> {
             (tenant_id, category_id, name, description, price_cents, available, active, position)
          VALUES ($1, $2, $3, $4, $5, true, true, $6)
          RETURNING id`,
-        [tenantId, categoryId, item.name, item.description, item.priceCents, itemIndex],
+        [
+          tenantId,
+          categoryId,
+          item.name,
+          item.description,
+          item.priceCents,
+          itemIndex,
+        ],
       );
       const itemId = itemResult.rows[0]?.id;
       if (itemId === undefined) throw new Error("item não criado");
@@ -264,7 +289,8 @@ async function seedMenu(client: PoolClient, tenantId: number): Promise<void> {
           ],
         );
         const groupId = groupResult.rows[0]?.id;
-        if (groupId === undefined) throw new Error("grupo de opções não criado");
+        if (groupId === undefined)
+          throw new Error("grupo de opções não criado");
 
         for (const [optionIndex, option] of group.options.entries()) {
           await client.query(
@@ -276,6 +302,226 @@ async function seedMenu(client: PoolClient, tenantId: number): Promise<void> {
       }
     }
   }
+}
+
+interface SeedOrderLine {
+  name: string;
+  sizeName?: string;
+  unitPriceCents: number;
+  quantity: number;
+  options?: Array<{ group: string; name: string; priceCents: number }>;
+  notes?: string;
+}
+
+interface SeedOrder {
+  minutesAgo: number;
+  status:
+    | "pending"
+    | "accepted"
+    | "out_for_delivery"
+    | "ready_for_pickup"
+    | "completed"
+    | "rejected";
+  customerName: string;
+  customerPhone: string;
+  neighborhood: string | null;
+  feeCents: number;
+  paymentMethod: "pix" | "cash" | "card_on_delivery";
+  changeForCents?: number;
+  rejectReason?: string;
+  notes?: string;
+  lines: SeedOrderLine[];
+}
+
+/**
+ * Pedidos de hoje em todos os estados, para o quadro do balcão ter o que
+ * mostrar logo após o seed. Um `pending` antigo (7 min) aparece em vermelho.
+ * Snapshot de nomes/preços do cardápio acima.
+ */
+const SEED_ORDERS: SeedOrder[] = [
+  {
+    minutesAgo: 7,
+    status: "pending",
+    customerName: "Ana Souza",
+    customerPhone: "5511990000001",
+    neighborhood: "Centro",
+    feeCents: 500,
+    paymentMethod: "cash",
+    changeForCents: 10000,
+    lines: [
+      {
+        name: "Pizza Calabresa",
+        sizeName: "Grande",
+        unitPriceCents: 6600,
+        quantity: 1,
+        options: [{ group: "Borda", name: "Catupiry", priceCents: 800 }],
+      },
+      { name: "Refrigerante 2L", unitPriceCents: 1200, quantity: 1 },
+    ],
+  },
+  {
+    minutesAgo: 1,
+    status: "pending",
+    customerName: "Bruno Lima",
+    customerPhone: "5511990000002",
+    neighborhood: null,
+    feeCents: 0,
+    paymentMethod: "pix",
+    lines: [
+      {
+        name: "X-Tudo",
+        unitPriceCents: 2500,
+        quantity: 2,
+        notes: "Sem cebola",
+      },
+    ],
+  },
+  {
+    minutesAgo: 18,
+    status: "accepted",
+    customerName: "Carla Mendes",
+    customerPhone: "5511990000003",
+    neighborhood: "Pinheiros",
+    feeCents: 800,
+    paymentMethod: "card_on_delivery",
+    lines: [
+      {
+        name: "Pizza Quatro Queijos",
+        sizeName: "Família",
+        unitPriceCents: 7200,
+        quantity: 1,
+      },
+      { name: "Suco Natural", unitPriceCents: 900, quantity: 2 },
+    ],
+  },
+  {
+    minutesAgo: 35,
+    status: "out_for_delivery",
+    customerName: "Diego Rocha",
+    customerPhone: "5511990000004",
+    neighborhood: "Moema",
+    feeCents: 700,
+    paymentMethod: "pix",
+    lines: [
+      {
+        name: "Pizza Marguerita",
+        sizeName: "Média",
+        unitPriceCents: 4500,
+        quantity: 1,
+      },
+    ],
+  },
+  {
+    minutesAgo: 25,
+    status: "ready_for_pickup",
+    customerName: "Elisa Martins",
+    customerPhone: "5511990000005",
+    neighborhood: null,
+    feeCents: 0,
+    paymentMethod: "cash",
+    lines: [{ name: "X-Salada", unitPriceCents: 2000, quantity: 1 }],
+  },
+  {
+    minutesAgo: 90,
+    status: "completed",
+    customerName: "Fábio Nunes",
+    customerPhone: "5511990000006",
+    neighborhood: "Vila Mariana",
+    feeCents: 700,
+    paymentMethod: "pix",
+    lines: [{ name: "X-Burger", unitPriceCents: 1800, quantity: 3 }],
+  },
+  {
+    minutesAgo: 60,
+    status: "rejected",
+    customerName: "Gabi Torres",
+    customerPhone: "5511990000007",
+    neighborhood: null,
+    feeCents: 0,
+    paymentMethod: "pix",
+    rejectReason: "sold_out",
+    lines: [{ name: "Suco Natural", unitPriceCents: 900, quantity: 1 }],
+  },
+];
+
+async function seedOrders(client: PoolClient, tenantId: number): Promise<void> {
+  for (const [index, order] of SEED_ORDERS.entries()) {
+    const subtotal = order.lines.reduce(
+      (sum, l) => sum + l.unitPriceCents * l.quantity,
+      0,
+    );
+    const createdAt = new Date(
+      Date.now() - order.minutesAgo * 60_000,
+    ).toISOString();
+    const reached = (s: SeedOrder["status"][]) =>
+      s.includes(order.status) ? createdAt : null;
+    const result = await client.query<{ id: number }>(
+      `INSERT INTO orders (
+         tenant_id, number, customer_name, customer_phone, status, fulfillment,
+         address, neighborhood, payment_method, change_for_cents, subtotal_cents,
+         fee_cents, total_cents, notes, reject_reason, created_at, accepted_at,
+         ready_at, completed_at, updated_at
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+               $16, $17, $18, $19, $16)
+       RETURNING id`,
+      [
+        tenantId,
+        index + 1,
+        order.customerName,
+        order.customerPhone,
+        order.status,
+        order.neighborhood ? "delivery" : "pickup",
+        order.neighborhood
+          ? JSON.stringify({
+              street: "Rua das Flores",
+              number: String(100 + index),
+              complement: null,
+              reference: null,
+            })
+          : null,
+        order.neighborhood,
+        order.paymentMethod,
+        order.changeForCents ?? null,
+        subtotal,
+        order.feeCents,
+        subtotal + order.feeCents,
+        order.notes ?? null,
+        order.rejectReason ?? null,
+        createdAt,
+        reached([
+          "accepted",
+          "out_for_delivery",
+          "ready_for_pickup",
+          "completed",
+        ]),
+        reached(["out_for_delivery", "ready_for_pickup", "completed"]),
+        reached(["completed"]),
+      ],
+    );
+    const orderId = result.rows[0]?.id;
+    for (const [position, line] of order.lines.entries()) {
+      await client.query(
+        `INSERT INTO order_items (tenant_id, order_id, name, size_name, unit_price_cents, quantity, options, notes, position)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          tenantId,
+          orderId,
+          line.name,
+          line.sizeName ?? null,
+          line.unitPriceCents,
+          line.quantity,
+          JSON.stringify(line.options ?? []),
+          line.notes ?? null,
+          position,
+        ],
+      );
+    }
+  }
+  await client.query(
+    `INSERT INTO order_counters (tenant_id, last_number) VALUES ($1, $2)`,
+    [tenantId, SEED_ORDERS.length],
+  );
 }
 
 async function main(): Promise<void> {
@@ -315,6 +561,7 @@ async function main(): Promise<void> {
 
     await seedStore(client, tenantId);
     await seedMenu(client, tenantId);
+    await seedOrders(client, tenantId);
 
     await client.query("COMMIT");
   } catch (err) {

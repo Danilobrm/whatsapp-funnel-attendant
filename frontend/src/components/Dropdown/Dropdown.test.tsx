@@ -18,7 +18,12 @@ describe('Dropdown — exibição', () => {
 
   it('mostra o placeholder quando nada está selecionado', () => {
     render(
-      <Dropdown value="" options={OPTIONS} onChange={vi.fn()} placeholder="Escolha" />,
+      <Dropdown
+        value=""
+        options={OPTIONS}
+        onChange={vi.fn()}
+        placeholder="Escolha"
+      />,
     );
     expect(screen.getByRole('button')).toHaveTextContent('Escolha');
   });
@@ -96,7 +101,9 @@ describe('Dropdown — teclado', () => {
 
 describe('Dropdown — desabilitado', () => {
   it('não abre com o teclado quando desabilitado', async () => {
-    render(<Dropdown value="sum" options={OPTIONS} onChange={vi.fn()} disabled />);
+    render(
+      <Dropdown value="sum" options={OPTIONS} onChange={vi.fn()} disabled />,
+    );
 
     expect(screen.getByRole('button')).toBeDisabled();
   });

@@ -1,7 +1,11 @@
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fireEvent, renderWithProviders, screen } from '../../../test/render.tsx';
+import {
+  fireEvent,
+  renderWithProviders,
+  screen,
+} from '../../../test/render.tsx';
 import WeekHoursGrid from './WeekHoursGrid.tsx';
 
 /**
@@ -36,14 +40,25 @@ describe('WeekHoursGrid — layout', () => {
   it('renderiza os 7 dias da semana', () => {
     renderWithProviders(<WeekHoursGrid value={{}} onChange={vi.fn()} />);
 
-    for (const label of ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']) {
+    for (const label of [
+      'Segunda',
+      'Terça',
+      'Quarta',
+      'Quinta',
+      'Sexta',
+      'Sábado',
+      'Domingo',
+    ]) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
   });
 
   it('mostra o intervalo existente com o rótulo de horário', () => {
     renderWithProviders(
-      <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={vi.fn()} />,
+      <WeekHoursGrid
+        value={{ mon: [['11:00', '15:00']] }}
+        onChange={vi.fn()}
+      />,
     );
     expect(screen.getByText('11:00–15:00')).toBeInTheDocument();
   });
@@ -58,7 +73,10 @@ describe('WeekHoursGrid — layout', () => {
 
   it('um intervalo terminando exatamente à meia-noite fica um bloco só, encostado na base', () => {
     renderWithProviders(
-      <WeekHoursGrid value={{ sat: [['18:00', '00:00']] }} onChange={vi.fn()} />,
+      <WeekHoursGrid
+        value={{ sat: [['18:00', '00:00']] }}
+        onChange={vi.fn()}
+      />,
     );
     expect(screen.getByTestId('block-sat-0')).toBeInTheDocument();
   });
@@ -68,7 +86,10 @@ describe('WeekHoursGrid — teclado', () => {
   it('ArrowUp no handle de início recua 15min', async () => {
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ mon: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     screen.getByTestId('handle-mon-0-start').focus();
@@ -80,7 +101,10 @@ describe('WeekHoursGrid — teclado', () => {
   it('ArrowDown no handle de fim avança 15min', async () => {
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ mon: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     screen.getByTestId('handle-mon-0-end').focus();
@@ -92,7 +116,10 @@ describe('WeekHoursGrid — teclado', () => {
   it('Home no handle de início vai pro topo da grade (10:00)', async () => {
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ mon: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     screen.getByTestId('handle-mon-0-start').focus();
@@ -104,7 +131,10 @@ describe('WeekHoursGrid — teclado', () => {
   it('End no handle de fim vai pra base da grade (00:00)', async () => {
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ mon: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     screen.getByTestId('handle-mon-0-end').focus();
@@ -116,7 +146,11 @@ describe('WeekHoursGrid — teclado', () => {
   it('não reage ao teclado quando desabilitado', async () => {
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ mon: [['11:00', '15:00']] }} onChange={onChange} disabled />,
+      <WeekHoursGrid
+        value={{ mon: [['11:00', '15:00']] }}
+        onChange={onChange}
+        disabled
+      />,
     );
 
     screen.getByTestId('handle-mon-0-start').focus();
@@ -139,7 +173,10 @@ describe('WeekHoursGrid — adicionar e remover', () => {
   it('remover o único intervalo do dia apaga a chave (fica fechado)', async () => {
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ wed: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ wed: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     await userEvent.click(screen.getByTestId('remove-wed-0'));
@@ -178,7 +215,10 @@ describe('WeekHoursGrid — arrastar', () => {
     mockGridRect();
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ fri: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ fri: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     const block = screen.getByTestId('block-fri-0');
@@ -193,7 +233,10 @@ describe('WeekHoursGrid — arrastar', () => {
     mockGridRect();
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ fri: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ fri: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     const handle = screen.getByTestId('handle-fri-0-start');
@@ -208,7 +251,10 @@ describe('WeekHoursGrid — arrastar', () => {
     mockGridRect();
     const onChange = vi.fn();
     renderWithProviders(
-      <WeekHoursGrid value={{ fri: [['11:00', '15:00']] }} onChange={onChange} />,
+      <WeekHoursGrid
+        value={{ fri: [['11:00', '15:00']] }}
+        onChange={onChange}
+      />,
     );
 
     const handle = screen.getByTestId('handle-fri-0-end');

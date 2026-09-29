@@ -13,11 +13,11 @@ vi.mock("../config/db.js", () => ({
   pool: { connect: vi.fn(), end: vi.fn() },
 }));
 
-vi.mock("../modules/ai/ollama-client.js", () => ({
+vi.mock("../modules/ai/clients/llm-client.js", () => ({
   createChatLlm: vi.fn(),
 }));
 
-vi.mock("../modules/whatsapp/whatsapp.service.js", () => ({
+vi.mock("../modules/whatsapp/services/whatsapp.service.js", () => ({
   processWebhook: vi.fn(async () => {}),
 }));
 
@@ -26,9 +26,9 @@ const VERIFY_TOKEN = "test-verify-token";
 vi.stubEnv("WHATSAPP_APP_SECRET", APP_SECRET);
 vi.stubEnv("WHATSAPP_VERIFY_TOKEN", VERIFY_TOKEN);
 
-const { signAuthToken } = await import("../modules/auth/jwt.js");
+const { signAuthToken } = await import("../modules/auth/utils/jwt.js");
 const { processWebhook } =
-  await import("../modules/whatsapp/whatsapp.service.js");
+  await import("../modules/whatsapp/services/whatsapp.service.js");
 const { createServer } = await import("./server.js");
 
 const app = createServer();
@@ -44,6 +44,15 @@ const GUARDED: [string, string][] = [
   ["get", "/api/simulator/conversation"],
   ["delete", "/api/simulator/conversation"],
   ["post", "/api/simulator/messages"],
+  ["get", "/api/simulator/cart"],
+  ["get", "/api/simulator/customers"],
+  ["post", "/api/simulator/customers"],
+  ["get", "/api/orders"],
+  ["get", "/api/orders/stream"],
+  ["get", "/api/orders/1"],
+  ["post", "/api/orders/1/transition"],
+  ["post", "/api/orders/dev-sample"],
+  ["get", "/api/dashboard"],
 ];
 
 describe("rotas autenticadas", () => {
@@ -85,6 +94,121 @@ describe("rotas autenticadas", () => {
 
     expect(res.status).toBe(422);
     expect(res.body).toMatchObject({ code: "text_required", field: "text" });
+  });
+});
+
+describe("simulador — clientes de teste", () => {
+  const auth = { Authorization: `Bearer ${TOKEN}` };
+
+  it("POST /api/simulator/customers sem nome responde 422 name_required", async () => {
+    const res = await request(app)
+      .post("/api/simulator/customers")
+      .set(auth)
+      .send({ name: " ", phone: "5561990000001" });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ code: "name_required", field: "name" });
+  });
+
+  it("POST /api/simulator/customers com telefone inválido responde 422 phone_invalid", async () => {
+    const res = await request(app)
+      .post("/api/simulator/customers")
+      .set(auth)
+      .send({ name: "Ana", phone: "12" });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ code: "phone_invalid", field: "phone" });
+  });
+
+  it("contactId inválido responde 422 invalid_contact, sem chegar ao banco", async () => {
+    const res = await request(app)
+      .get("/api/simulator/conversation?contactId=../../etc")
+      .set(auth);
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({
+      code: "invalid_contact",
+      field: "contactId",
+    });
+  });
+});
+
+describe("cardápio em link (rotas públicas, autenticadas pelo token da URL)", () => {
+  it("GET /api/public/menu/:token com token inválido responde 401 invalid_menu_link, sem message", async () => {
+    const res = await request(app).get("/api/public/menu/lixo");
+
+    expect(res.status).toBe(401);
+    expect(res.body).toMatchObject({
+      status: "unauthorized",
+      code: "invalid_menu_link",
+    });
+    expect(res.body).not.toHaveProperty("message");
+  });
+
+  it("POST /api/public/cart/:token com token inválido responde 401 sem gravar nada", async () => {
+    const res = await request(app)
+      .post("/api/public/cart/lixo")
+      .send({ items: [{ itemId: 1, quantity: 1 }] });
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("invalid_menu_link");
+  });
+
+  // O token do PAINEL (JWT) não é um código de link: nem chega ao banco.
+  it("um token do painel NÃO abre o cardápio público", async () => {
+    const res = await request(app).get(`/api/public/menu/${TOKEN}`);
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("invalid_menu_link");
+  });
+
+  it("um código bem formado mas desconhecido responde 401 invalid_menu_link", async () => {
+    const res = await request(app).get("/api/public/menu/abcdEFGH1234");
+
+    expect(res.status).toBe(401);
+    expect(res.body.code).toBe("invalid_menu_link");
+  });
+
+  it("não exige Authorization (o cliente final não tem login)", async () => {
+    const res = await request(app).get("/api/public/menu/lixo");
+
+    expect(res.body.code).not.toBe("missing_token");
+  });
+
+  it("limita chamadas por IP (429 rate_limited)", async () => {
+    let last = 0;
+    for (let i = 0; i < 25; i += 1) {
+      last = (await request(app).post("/api/public/cart/lixo").send({})).status;
+    }
+
+    expect(last).toBe(429);
+  });
+});
+
+describe("pedidos", () => {
+  it("POST /api/orders/:id/transition com status inválido responde 422", async () => {
+    const res = await request(app)
+      .post("/api/orders/1/transition")
+      .set("Authorization", `Bearer ${TOKEN}`)
+      .send({ to: "lixo" });
+
+    expect(res.status).toBe(422);
+    expect(res.body).toMatchObject({ code: "invalid_status" });
+  });
+
+  it("POST /api/orders/dev-sample NÃO existe em produção (404)", async () => {
+    const { env } = await import("../config/env.js");
+    const original = env.nodeEnv;
+    env.nodeEnv = "production";
+    try {
+      const prodApp = createServer();
+      const res = await request(prodApp)
+        .post("/api/orders/dev-sample")
+        .set("Authorization", `Bearer ${TOKEN}`);
+      expect(res.status).toBe(404);
+    } finally {
+      env.nodeEnv = original;
+    }
   });
 });
 

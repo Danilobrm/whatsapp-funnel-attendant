@@ -69,39 +69,39 @@ O dono cadastra o cardápio inteiro de uma lanchonete e as regras de entrega pel
 O coração do produto. O agente para de só conversar e passa a montar pedido.
 
 ### 2.0 Provedor de LLM
-- [ ] `createChatLlm()` passa a escolher o provedor por env (`LLM_PROVIDER=ollama|anthropic|openai`, `LLM_MODEL`, chave correspondente). Ollama continua sendo o default de dev. Tool calling com modelo pequeno local é instável; para o piloto com restaurante real, use um modelo hospedado.
-- [ ] Toda chamada continua com `fetchWithTimeout` / timeout do SDK. `generateAgentReply` continua nunca lançando.
+- [x] `createChatLlm()` passa a escolher o provedor por env (`LLM_PROVIDER=ollama|anthropic|openai`, `LLM_MODEL`, chave correspondente). Ollama continua sendo o default de dev. Tool calling com modelo pequeno local é instável; para o piloto com restaurante real, use um modelo hospedado.
+- [x] Toda chamada continua com `fetchWithTimeout` / timeout do SDK. `generateAgentReply` continua nunca lançando.
 
 ### Backend
-- [ ] Tabelas:
+- [x] Tabelas:
   - `customers (id, tenant_id, phone, name, last_address JSONB NULL, created_at, UNIQUE(tenant_id, phone))` — criado/atualizado a cada conversa de WhatsApp.
   - `carts (conversation_id PK REFERENCES conversations ON DELETE CASCADE, tenant_id, items JSONB, fulfillment NULL, address JSONB NULL, zone_id NULL, payment_method NULL, change_for_cents NULL, notes NULL, status, summary_hash NULL, updated_at)`
     - `status`: `open` | `awaiting_confirmation`.
     - Carrinho sem atividade por 3h é descartado (verificado na leitura, sem job).
-- [ ] Funções puras em `modules/order/`:
+- [x] Funções puras em `modules/order/`:
   - `pricing.ts` — `priceCart(cart, menu, zone, settings)` → `{ lines, subtotalCents, feeCents, totalCents, problems[] }`. Problemas: item indisponível, opção obrigatória faltando, acima do `max_select`, abaixo do pedido mínimo, bairro não atendido, troco menor que o total.
   - `summary.ts` — `formatOrderSummary(priced, cart)` → texto pt-BR para WhatsApp com itens, adicionais, subtotal, taxa, total, entrega/retirada, endereço, pagamento e troco. Termina com "Posso confirmar?".
-  - `cartHash(cart)` — hash estável do conteúdo.
-- [ ] Ferramentas do agente (`modules/agent/tools/`), cada uma com schema de entrada validado e saída em JSON curto:
+  - `cartHash(cart, totalCents)` — hash estável do conteúdo + total (preço que mudou entre o resumo e o "sim" invalida a confirmação).
+- [x] Ferramentas do agente (`modules/agent/tools/`), cada uma com schema de entrada validado e saída em JSON curto:
   - `search_menu(query)` → itens que casam (nome, preço/tamanhos, grupos). Para cardápio pequeno (< ~60 itens) o cardápio resumido também vai no system prompt.
   - `add_item(item_id, size_id?, option_ids[], quantity, notes?)` → valida contra o cardápio e devolve o carrinho precificado ou o problema.
-  - `remove_item(line_index)` / `update_quantity(line_index, quantity)`
+  - `remove_item(line_number)` / `update_quantity(line_number, quantity)` (1-based, o número da linha em `view_cart`)
   - `view_cart()`
   - `set_fulfillment(type: delivery|pickup, address?, neighborhood?)` → resolve a zona e a taxa.
   - `set_payment(method, change_for?)`
   - `request_confirmation()` → só funciona com carrinho sem `problems`. O SISTEMA envia `formatOrderSummary` (não o LLM), grava `summary_hash` e muda para `awaiting_confirmation`.
-  - `place_order()` → recusa se status ≠ `awaiting_confirmation` ou se `cartHash` mudou desde o resumo. Cria o pedido (fase 3; até lá, grava em tabela provisória ou retorna mock) e limpa o carrinho.
+  - `place_order()` → recusa se status ≠ `awaiting_confirmation` ou se `cartHash` mudou desde o resumo. Cria o pedido por `createOrder` (fase 3) e limpa o carrinho. A confirmação ao cliente é texto do SISTEMA, não do modelo.
   - `store_info()` → aberto/fechado, horários (`describeHours`), tempo estimado, pedido mínimo, formas de pagamento.
   - `call_human(reason)` → marca handoff (fase 4; até lá só registra).
-- [ ] Loop do agente: no máximo 6 iterações de ferramenta por mensagem; estourou → fallback da persona.
-- [ ] Loja fechada: o agente pode conversar e mostrar o cardápio, mas `request_confirmation` e `place_order` recusam com o próximo horário.
-- [ ] Cliente recorrente: `customers.last_address` e o último pedido entram no contexto ("quer o mesmo de sábado?", "entrega no mesmo endereço?").
-- [ ] Prompt (`agent.prompt.ts`): remover a regra "você não tem cardápio"; manter "nunca invente preço, item ou prazo — use as ferramentas"; nunca confirmar pedido sem `place_order` ter retornado sucesso; respostas curtas de WhatsApp.
-- [ ] Mídia não suportada continua com o aviso fixo. Áudio fica para depois (ver Fora da v1).
+- [x] Loop do agente: no máximo 6 iterações de ferramenta por mensagem; estourou → fallback da persona.
+- [x] Loja fechada: o agente pode conversar e mostrar o cardápio, mas `request_confirmation` e `place_order` recusam com o próximo horário.
+- [x] Cliente recorrente: `customers.last_address` e o último pedido entram no contexto ("quer o mesmo de sábado?", "entrega no mesmo endereço?").
+- [x] Prompt (`agent.prompt.ts`): remover a regra "você não tem cardápio"; manter "nunca invente preço, item ou prazo — use as ferramentas"; nunca confirmar pedido sem `place_order` ter retornado sucesso; respostas curtas de WhatsApp.
+- [x] Mídia não suportada continua com o aviso fixo. Áudio fica para depois (ver Fora da v1).
 
 ### Frontend
-- [ ] Simulador mostra, em modo dev (toggle), as ferramentas chamadas em cada turno e o carrinho atual ao lado da conversa. É a ferramenta de depuração do agente; o endpoint devolve isso só para o canal `simulator`.
-- [ ] **Clientes simulados**: o simulador deixa escolher ou criar um cliente de teste (nome + telefone fictício). Cada um é uma conversa própria (`contact = sim-<telefone>`) e um registro em `customers`. É o que permite testar cliente recorrente ("o mesmo de sábado") e, na Fase 3, vários pedidos simultâneos no kanban sem WhatsApp. Backend: `/api/simulator` passa a receber `contactId`.
+- [x] Simulador mostra, em modo dev (toggle), as ferramentas chamadas em cada turno e o carrinho atual ao lado da conversa. É a ferramenta de depuração do agente; o endpoint devolve isso só para o canal `simulator`.
+- [x] **Clientes simulados**: o simulador deixa escolher ou criar um cliente de teste (nome + telefone fictício). Cada um é uma conversa própria (`contact = sim-<telefone>`) e um registro em `customers`. É o que permite testar cliente recorrente ("o mesmo de sábado") e, na Fase 3, vários pedidos simultâneos no kanban sem WhatsApp. Backend: `/api/simulator` passa a receber `contactId`.
 
 ### Testes obrigatórios
 - `pricing`: tamanhos, adicionais somando, meio a meio com `max` e `average`, quantidade, taxa por bairro, mínimo, troco, item esgotado entre a adição e a confirmação.
@@ -110,7 +110,42 @@ O coração do produto. O agente para de só conversar e passa a montar pedido.
 - Agente com LLM mockado: sequência de tool calls simulada ponta a ponta (oi → pizza grande calabresa com borda → entrega no Centro → Pix → resumo → "sim" → pedido criado).
 
 ### Pronto quando
+> **Estado:** implementado e coberto por testes (incluindo o fluxo ponta a ponta com LLM roteirizado) e verificado contra Postgres real. Ainda falta rodar o fluxo completo com um modelo HOSPEDADO (`LLM_PROVIDER=anthropic|openai`): com `llama3.2` local o laço de ferramentas funciona, mas leva 80–125 s por turno e às vezes escreve um "resumo" no lugar de chamar `request_confirmation` — por isso o piloto usa modelo hospedado.
+
 No simulador, um pedido completo de pizza meio a meio com borda, entrega e troco sai do "oi" até o "pedido confirmado" com o total certo, e mudar o carrinho depois do resumo força um novo resumo.
+
+---
+
+## Fase 2.5 — Cardápio em link (o cliente vê o que escolhe)
+
+Problema: pelo chat o cliente não vê fotos, tamanhos nem adicionais. Catálogo do WhatsApp não serve (item plano: sem tamanhos, grupos de opções nem meio a meio) e listar nomes no texto está descartado. Solução: o atendente manda um link para uma página web mobile com o cardápio real; o cliente monta o carrinho lá e volta ao WhatsApp, onde o pedido continua (entrega, pagamento, resumo, "sim") exatamente como na Fase 2.
+
+Fluxo: `send_menu_link` → link `…/c/<código>` → página (fotos, tamanhos, sabores, adicionais, total ao vivo) → "Confirmar itens" → backend valida com `priceCart` e grava em `carts` → `sendOutbound` manda "Recebi seu carrinho…" na conversa → botão "Voltar ao WhatsApp" (`wa.me`, texto pré-preenchido) → agente segue de onde parou.
+
+### Backend
+- [x] Link curto: `/c/<código>` com código aleatório de 12 caracteres (72 bits) apontando para uma linha de `menu_links` (tenant, conversa e validade de 3h ficam no banco, não na URL — link curto e revogável). O link válido da conversa é reaproveitado. Nada de preço vem do navegador.
+- [x] `PUBLIC_APP_URL` (base do frontend). Sem ela em produção, `send_menu_link` devolve erro e o agente segue pelo chat.
+- [x] Ferramenta `send_menu_link`: o SISTEMA envia o texto com o link e encerra o turno (mesmo padrão do resumo). O prompt manda preferir o link para quem quer pedir e continuar de `view_cart` quando o carrinho já veio do cardápio.
+- [x] `GET /api/public/menu/:token` (loja, cardápio público, carrinho atual, `whatsappUrl`) e `POST /api/public/cart/:token` (valida TODAS as linhas com `priceCart`, grava, avisa no chat). Público, autenticado só pelo token, com rate limit em memória por IP. Erros tipados: 401 `invalid_menu_link`/`expired_menu_link`, 422 `cart_empty`/`cart_invalid` (com os problemas por linha), 429 `rate_limited`.
+- [x] `store_settings.whatsapp_number` (número do atendimento, só dígitos) para o `wa.me`; sem ele (ou no simulador) a página só pede para voltar à conversa.
+- [x] Funil: `menu_link_events` (`sent` → `opened` → `confirmed` → `ordered`), contagem por conversa distinta nos últimos 7 dias em `GET /api/dashboard`.
+
+### Frontend
+- [x] Rota pública `/c/:token` (fora do painel, sem login): cabeçalho da loja com aberto/fechado, chips de categoria, cartões com foto, folha do item (tamanho, opções com mín./máx., quantidade, observação, preço ao vivo), barra do carrinho, folha do carrinho (editar/remover), tela final com "Voltar ao WhatsApp". Esqueleto no grid, erro de link inválido/expirado, mobile-first, só tokens de tema, i18n pt-BR + en-US.
+- [x] Painel: campo "WhatsApp do atendimento" em Loja › Geral; bloco "Funil do cardápio" na Visão geral.
+- [x] Simulador: links viram clicáveis no balão e a conversa recarrega ao voltar para a aba (o pedido feito na página chega como mensagem).
+
+### Testes obrigatórios
+- Código: formato, aleatoriedade, lixo recusado sem consultar o banco, desconhecido → `invalid_menu_link`, vencido → `expired_menu_link`, reaproveitamento, colisão, isolamento por tenant.
+- Pura: `toPublicMenu` (só ativos, sem campos internos), `parseCartItems`, mensagens (link, carrinho recebido para cada próximo passo), `wa.me`.
+- Confirmação: rejeita linha inválida (tamanho/opção/esgotado) sem gravar, aceita carrinho sem entrega/pagamento, grava e avisa o chat, falha do aviso não desfaz o carrinho, isolamento entre tenants.
+- Ferramenta: `send_menu_link` com resposta do sistema; sem `PUBLIC_APP_URL` → erro.
+- Frontend: cálculo de preço espelha o backend (tabela), folha do item respeita mín./máx., carrinho, envio, estados de erro.
+
+### Pronto quando
+> **Estado:** implementado e coberto por testes; o backend foi exercitado ao vivo (servidor real + Postgres: página pública, carrinho inválido recusado, carrinho válido gravado com preço 8250 = 7200 + média dos sabores 250 + borda 800, mensagem "Recebi seu carrinho" gravada na conversa, funil `sent/opened/confirmed`). **Falta** ver a página num navegador/celular de verdade e rodar o fluxo com um modelo hospedado que funcione (a chave do Gemini estava sem créditos).
+
+No simulador o "quero pedir" devolve um link; o link abre o cardápio com fotos; montar meio a meio com borda mostra o total certo; "Confirmar itens" faz a mensagem "Recebi seu carrinho" aparecer na conversa e o agente continua com entrega, pagamento, resumo e "sim" até o pedido cair no kanban. O funil mostra os quatro passos.
 
 ---
 
@@ -119,28 +154,29 @@ No simulador, um pedido completo de pizza meio a meio com borda, entrega e troco
 A tela que fica aberta no balcão.
 
 ### Backend
-- [ ] Tabelas:
+- [x] Tabelas (+ `order_counters` para o número atômico). **Desvio:** `customers` é da Fase 2, então por enquanto `orders` guarda `customer_name`/`customer_phone` como snapshot; `customer_id` entra na Fase 2 via `ADD COLUMN IF NOT EXISTS`.
   - `orders (id, tenant_id, number, customer_id, conversation_id, status, fulfillment, address JSONB, neighborhood, payment_method, change_for_cents, subtotal_cents, fee_cents, total_cents, notes, reject_reason, created_at, accepted_at, ready_at, completed_at, UNIQUE(tenant_id, number))`
     - `number`: sequencial por tenant (o que o balcão fala: "pedido 42").
   - `order_items (id, tenant_id, order_id, name, size_name, unit_price_cents, quantity, options JSONB, notes)` — snapshot.
-- [ ] `order.status.ts` puro: máquina de estados.
+- [x] `order.status.ts` puro: máquina de estados.
   - `pending → accepted | rejected`
   - `accepted → out_for_delivery | ready_for_pickup` (conforme fulfillment)
   - `out_for_delivery | ready_for_pickup → completed`
   - `pending | accepted → cancelled`
   - Transição inválida → `InvalidTransitionError` → 409.
-- [ ] Mensagem automática ao cliente em cada transição (texto fixo por status, com número e tempo estimado; rejeição inclui o motivo). Criar `sendOutbound(tenantId, conversationId, text)` no módulo conversation: grava a mensagem outbound e, só se o canal for `whatsapp`, envia pela Meta. Nas fases 1 a 6 só o simulador existe na prática, e as mensagens aparecem na conversa do cliente simulado.
-- [ ] Rotas guardadas: `GET /api/orders?status=&date=`, `GET /api/orders/:id`, `POST /api/orders/:id/transition { to, reason? }`.
-- [ ] Tempo real: `GET /api/orders/stream` (SSE) com EventEmitter em memória por tenant (instância única na v1; documentar que multi-instância exige Redis/pubsub). Autenticação via header no fetch streaming (não usar EventSource com token na URL).
+- [x] Mensagem automática ao cliente em cada transição (texto fixo por status, com número e tempo estimado; rejeição inclui o motivo). Criar `sendOutbound(tenantId, conversationId, text)` no módulo conversation: grava a mensagem outbound e, só se o canal for `whatsapp`, envia pela Meta. Nas fases 1 a 6 só o simulador existe na prática, e as mensagens aparecem na conversa do cliente simulado.
+- [x] Rotas guardadas: `GET /api/orders` (quadro: em andamento + encerrados de hoje no fuso da loja; filtros `?status=&date=` ficam para quando houver histórico), `GET /api/orders/:id`, `POST /api/orders/:id/transition { to, reason? }`.
+- [x] Tempo real: `GET /api/orders/stream` (SSE) com EventEmitter em memória por tenant (instância única na v1; documentar que multi-instância exige Redis/pubsub). Autenticação via header no fetch streaming (não usar EventSource com token na URL).
 - [ ] Alerta de pedido parado: pedido `pending` há mais de 5 min → mensagem ao cliente ("o restaurante já vai confirmar") via `sendOutbound` e evento `order_stale` no stream (o painel destaca). O aviso no WhatsApp pessoal do dono fica para a Fase 7. Varredura com `setInterval` iniciada só no `index.ts` (nunca no import, para não travar o vitest).
 
 ### Frontend
-- [ ] `/admin/orders` vira a tela inicial do painel. Kanban: Novos · Em preparo · Saiu / Pronto · Concluídos hoje. Cartão com número, cliente, total, tempo desde a criação (fica vermelho após 5 min em Novos).
-- [ ] Som e título da aba piscando a cada pedido novo. Navegador bloqueia áudio sem interação: botão "Ativar som" visível até o primeiro clique.
-- [ ] Aceitar / recusar (motivo obrigatório: esgotado, fora da área, fechando, outro).
-- [ ] Drawer de detalhe com itens, adicionais, observações, pagamento, troco, endereço, link para a conversa.
+- [x] `/admin/orders` vira a tela inicial do painel. Kanban: Novos · Em preparo · Saiu / Pronto · Concluídos hoje. Cartão com número, cliente, total, tempo desde a criação (fica vermelho após 5 min em Novos).
+- [x] Som e título da aba piscando a cada pedido novo. Navegador bloqueia áudio sem interação: botão "Ativar som" visível até o primeiro clique.
+- [x] Aceitar / recusar (motivo obrigatório: esgotado, fora da área, fechando, outro).
+- [x] Drawer de detalhe com itens, adicionais, observações, pagamento, troco, endereço, link para a conversa.
 - [ ] Imprimir comanda: CSS de impressão para 80mm, número grande, itens em destaque, sem cores.
-- [ ] Reconexão automática do stream e indicador "ao vivo / reconectando".
+- [x] Reconexão automática do stream e indicador "ao vivo / reconectando".
+- [x] Até a Fase 2 existir: pedidos de exemplo no seed e botão "Pedido de teste" (só em dev, `POST /api/orders/dev-sample`), montado do cardápio real e ligado à conversa do simulador de quem clicou. A Fase 2 chama o mesmo `createOrder`.
 
 ### Testes obrigatórios
 - Máquina de estados: todas as transições válidas e inválidas.
@@ -190,7 +226,8 @@ Com a foto de um cardápio real de lanchonete, o dono chega a um cardápio revis
 
 ## Fase 6 — Resumo e conta
 
-- [ ] `/admin/summary`: pedidos e faturamento de hoje e dos últimos 7 dias, ticket médio, % de pedidos fechados pelo bot sem humano, itens mais vendidos. Contar pedidos por `status`, não mensagens (lição do dashboard do faq-chatbot).
+- [x] Resumo (adiantado, virou a primeira aba `/admin/dashboard` "Visão geral"): pedidos e faturamento de hoje e dos últimos 7 dias, ticket médio, itens mais vendidos, entrega × retirada, formas de pagamento, status da loja. Contando pedidos por `status`, não mensagens.
+- [ ] Resumo: % de pedidos fechados pelo bot sem humano (depende do handoff da Fase 4).
 - [ ] Conta: usuários da loja (convidar por e-mail, papel único `admin` na v1), status da assinatura (cobrança por Pix manual na v1, campo `subscription_status` no tenant controlado por você).
 - [ ] LGPD mínima: aviso de privacidade no primeiro contato de cada cliente (texto fixo, uma vez) e rota para apagar os dados de um cliente.
 

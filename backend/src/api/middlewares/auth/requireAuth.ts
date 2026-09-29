@@ -1,8 +1,8 @@
-import { UnauthorizedError } from "../../../modules/auth/auth.errors.js";
-import { verifyAuthToken } from "../../../modules/auth/jwt.js";
-import { asTenantId } from "../../../modules/tenants/tenant.types.js";
+import { UnauthorizedError } from "../../../modules/auth/errors/auth.errors.js";
+import { verifyAuthToken } from "../../../modules/auth/utils/jwt.js";
+import { asTenantId } from "../../../modules/tenants/types/tenant.types.js";
 
-import type { RequestAuth } from "../../../modules/auth/auth.types.js";
+import type { RequestAuth } from "../../../modules/auth/types/auth.types.js";
 import type { RequestHandler } from "express";
 
 const BEARER = "Bearer ";

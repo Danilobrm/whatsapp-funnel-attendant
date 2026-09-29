@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { labelToMinutes, minutesToLabel, snapToStep, wrapMinutes } from './timeSlots.ts';
+import {
+  labelToMinutes,
+  minutesToLabel,
+  snapToStep,
+  wrapMinutes,
+} from './timeSlots.ts';
 
 describe('minutesToLabel', () => {
   it('formata HH:MM com zero à esquerda', () => {

@@ -1,5 +1,5 @@
-import type { OpeningHours } from '../../../api/store';
-import WeekHoursGrid, { WeekHoursGridSkeleton } from '../WeekHoursGrid';
+import type { OpeningHours } from '../../../api/store/store.ts';
+import WeekHoursGrid, { WeekHoursGridSkeleton } from '../WeekHoursGrid/WeekHoursGrid.tsx';
 
 interface OpeningHoursEditorProps {
   value: OpeningHours;
@@ -26,5 +26,7 @@ export default function OpeningHoursEditor({
   onChange,
   disabled = false,
 }: OpeningHoursEditorProps) {
-  return <WeekHoursGrid value={value} onChange={onChange} disabled={disabled} />;
+  return (
+    <WeekHoursGrid value={value} onChange={onChange} disabled={disabled} />
+  );
 }

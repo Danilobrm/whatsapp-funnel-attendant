@@ -5,10 +5,10 @@ import {
   saveStoreSettings,
   StoreRejectedError,
   type StoreSettings,
-} from '../../api/store';
+} from '../../api/store/store.ts';
 import { useT } from '../../i18n/index.tsx';
 
-import type { SyncStatusState } from '../../components/settings/SyncStatus';
+import type { SyncStatusState } from '../../components/settings/SyncStatus/SyncStatus.tsx';
 
 const AUTOSAVE_DELAY_MS = 700;
 
@@ -72,6 +72,13 @@ export function useStoreSettings() {
         paymentMethods: next.paymentMethods,
         pixKey: next.pixKey,
         ownerWhatsapp: next.ownerWhatsapp,
+        whatsappNumber: next.whatsappNumber,
+        restaurantName: next.restaurantName,
+        logoUrl: next.logoUrl,
+        contactEmail: next.contactEmail,
+        address: next.address,
+        latitude: next.latitude,
+        longitude: next.longitude,
       });
       setSaved(result.settings);
       setDraft(result.settings);
@@ -85,7 +92,9 @@ export function useStoreSettings() {
   }
 
   const dirty =
-    draft !== null && saved !== null && JSON.stringify(draft) !== JSON.stringify(saved);
+    draft !== null &&
+    saved !== null &&
+    JSON.stringify(draft) !== JSON.stringify(saved);
 
   useEffect(() => {
     if (loading || !dirty || !draft) return;

@@ -2,14 +2,17 @@ import cors from "cors";
 import express, { type Express, type Request } from "express";
 
 import { env } from "../config/env.js";
-import { productImagesDir } from "../modules/menu/imageStorage.js";
-import { authRoutes } from "./routes/authRoutes.js";
-import { healthRoutes } from "./routes/healthRoutes.js";
-import { menuRoutes } from "./routes/menuRoutes.js";
-import { settingsRoutes } from "./routes/settingsRoutes.js";
-import { simulatorRoutes } from "./routes/simulatorRoutes.js";
-import { storeRoutes } from "./routes/storeRoutes.js";
-import { whatsappRoutes } from "./routes/whatsappRoutes.js";
+import { productImagesDir } from "../modules/menu/storage/imageStorage.js";
+import { authRoutes } from "../modules/auth/routes/authRoutes.js";
+import { dashboardRoutes } from "../modules/dashboard/routes/dashboardRoutes.js";
+import { healthRoutes } from "../modules/health/routes/healthRoutes.js";
+import { menuRoutes } from "../modules/menu/routes/menuRoutes.js";
+import { createPublicRoutes } from "../modules/menulink/routes/publicRoutes.js";
+import { createOrderRoutes } from "../modules/order/routes/orderRoutes.js";
+import { settingsRoutes } from "../modules/settings/routes/settingsRoutes.js";
+import { simulatorRoutes } from "../modules/simulator/routes/simulatorRoutes.js";
+import { storeRoutes } from "../modules/store/routes/storeRoutes.js";
+import { whatsappRoutes } from "../modules/whatsapp/routes/whatsappRoutes.js";
 import { requireAuth } from "./middlewares/auth/requireAuth.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
 
@@ -37,6 +40,9 @@ export function createServer(): Express {
   app.use("/health", healthRoutes);
   app.use("/api/auth", authRoutes); // POST /login aberto; GET /me guarda no router
   app.use("/webhooks/whatsapp", whatsappRoutes); // autenticado por assinatura HMAC
+  // Cardápio em link: autenticado pelo TOKEN da URL (não há login do cliente),
+  // com rate limit por IP.
+  app.use("/api/public", createPublicRoutes());
   // Fotos de produto: público (o painel usa a URL direto em <img>), como
   // seria um bucket S3 público. Só o UPLOAD (`POST /api/menu/images`) exige
   // login — servir o arquivo depois de gravado não precisa.
@@ -49,6 +55,8 @@ export function createServer(): Express {
   app.use("/api/simulator", requireAuth, simulatorRoutes);
   app.use("/api/menu", requireAuth, menuRoutes);
   app.use("/api/store", requireAuth, storeRoutes);
+  app.use("/api/orders", requireAuth, createOrderRoutes());
+  app.use("/api/dashboard", requireAuth, dashboardRoutes);
 
   app.use(errorHandler);
 

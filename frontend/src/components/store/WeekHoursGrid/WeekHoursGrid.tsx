@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 
-import { minutesToLabel, labelToMinutes, snapToStep } from '../../../lib/timeSlots.ts';
-import { DAY_KEYS, type DayInterval, type DayKey, type OpeningHours } from '../../../api/store';
+import {
+  minutesToLabel,
+  labelToMinutes,
+  snapToStep,
+} from '../../../lib/timeSlots.ts';
+import {
+  DAY_KEYS,
+  type DayInterval,
+  type DayKey,
+  type OpeningHours,
+} from '../../../api/store/store.ts';
 import { useT } from '../../../i18n/index.tsx';
 
 const ROW_PX = 32;
@@ -25,7 +34,14 @@ type Edge = 'start' | 'end';
 
 type Interaction =
   | { kind: 'create'; day: DayKey; anchorWindow: number; currentWindow: number }
-  | { kind: 'move'; day: DayKey; index: number; anchorWindow: number; startWindow: number; endWindow: number }
+  | {
+      kind: 'move';
+      day: DayKey;
+      index: number;
+      anchorWindow: number;
+      startWindow: number;
+      endWindow: number;
+    }
   | { kind: 'resize'; day: DayKey; index: number; edge: Edge }
   | null;
 
@@ -36,8 +52,12 @@ type Interaction =
  * não o início (que ficaria fora da faixa editável e seria grampeado a 0).
  */
 function toWindow(absoluteMinutes: number): number {
-  const effective = absoluteMinutes === 0 ? WINDOW_END_MINUTES : absoluteMinutes;
-  return Math.min(WINDOW_MINUTES, Math.max(0, effective - WINDOW_START_MINUTES));
+  const effective =
+    absoluteMinutes === 0 ? WINDOW_END_MINUTES : absoluteMinutes;
+  return Math.min(
+    WINDOW_MINUTES,
+    Math.max(0, effective - WINDOW_START_MINUTES),
+  );
 }
 
 /** Minutos na janela → minutos reais. `minutesToLabel` já dobra 1440 pra "00:00". */
@@ -77,7 +97,12 @@ export default function WeekHoursGrid({
     onChange(next);
   }
 
-  function patchEdge(day: DayKey, index: number, edge: Edge, windowMinutes: number) {
+  function patchEdge(
+    day: DayKey,
+    index: number,
+    edge: Edge,
+    windowMinutes: number,
+  ) {
     const label = minutesToLabel(fromWindow(windowMinutes));
     const next = intervalsFor(day).map((interval, i) => {
       if (i !== index) return interval;
@@ -103,16 +128,33 @@ export default function WeekHoursGrid({
       if (!interaction) return;
 
       if (interaction.kind === 'create') {
-        setInteraction({ ...interaction, currentWindow: windowAt(event.clientY) });
+        setInteraction({
+          ...interaction,
+          currentWindow: windowAt(event.clientY),
+        });
       } else if (interaction.kind === 'resize') {
-        patchEdge(interaction.day, interaction.index, interaction.edge, windowAt(event.clientY));
+        patchEdge(
+          interaction.day,
+          interaction.index,
+          interaction.edge,
+          windowAt(event.clientY),
+        );
       } else if (interaction.kind === 'move') {
         const delta = windowAt(event.clientY) - interaction.anchorWindow;
-        const newStart = Math.min(WINDOW_MINUTES, Math.max(0, interaction.startWindow + delta));
-        const newEnd = Math.min(WINDOW_MINUTES, Math.max(0, interaction.endWindow + delta));
+        const newStart = Math.min(
+          WINDOW_MINUTES,
+          Math.max(0, interaction.startWindow + delta),
+        );
+        const newEnd = Math.min(
+          WINDOW_MINUTES,
+          Math.max(0, interaction.endWindow + delta),
+        );
         const next = intervalsFor(interaction.day).map((iv, i) =>
           i === interaction.index
-            ? ([minutesToLabel(fromWindow(newStart)), minutesToLabel(fromWindow(newEnd))] as DayInterval)
+            ? ([
+                minutesToLabel(fromWindow(newStart)),
+                minutesToLabel(fromWindow(newEnd)),
+              ] as DayInterval)
             : iv,
         );
         setIntervals(interaction.day, next);
@@ -128,7 +170,10 @@ export default function WeekHoursGrid({
         if (finish - start >= MIN_CREATE_MINUTES) {
           setIntervals(interaction.day, [
             ...intervalsFor(interaction.day),
-            [minutesToLabel(fromWindow(start)), minutesToLabel(fromWindow(finish))],
+            [
+              minutesToLabel(fromWindow(start)),
+              minutesToLabel(fromWindow(finish)),
+            ],
           ]);
         }
       }
@@ -144,11 +189,18 @@ export default function WeekHoursGrid({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interaction]);
 
-  function handleKeyDown(event: React.KeyboardEvent, day: DayKey, index: number, edge: Edge) {
+  function handleKeyDown(
+    event: React.KeyboardEvent,
+    day: DayKey,
+    index: number,
+    edge: Edge,
+  ) {
     if (disabled) return;
     const interval = intervalsFor(day)[index];
     if (!interval) return;
-    const current = toWindow(labelToMinutes(interval[edge === 'start' ? 0 : 1]));
+    const current = toWindow(
+      labelToMinutes(interval[edge === 'start' ? 0 : 1]),
+    );
 
     let next: number | null = null;
     if (event.key === 'ArrowUp') next = current - 15;
@@ -162,7 +214,10 @@ export default function WeekHoursGrid({
   }
 
   function removeInterval(day: DayKey, index: number) {
-    setIntervals(day, intervalsFor(day).filter((_, i) => i !== index));
+    setIntervals(
+      day,
+      intervalsFor(day).filter((_, i) => i !== index),
+    );
   }
 
   function addDefaultInterval(day: DayKey) {
@@ -197,7 +252,10 @@ export default function WeekHoursGrid({
       </div>
 
       <div className="flex">
-        <div className="relative w-12 flex-none" style={{ height: HOURS.length * ROW_PX }}>
+        <div
+          className="relative w-12 flex-none"
+          style={{ height: HOURS.length * ROW_PX }}
+        >
           {HOURS.map((hour, index) => (
             <span
               key={hour}
@@ -232,7 +290,12 @@ export default function WeekHoursGrid({
                 onMouseDown={(event) => {
                   if (disabled || event.target !== event.currentTarget) return;
                   const w = windowAt(event.clientY);
-                  setInteraction({ kind: 'create', day, anchorWindow: w, currentWindow: w });
+                  setInteraction({
+                    kind: 'create',
+                    day,
+                    anchorWindow: w,
+                    currentWindow: w,
+                  });
                 }}
               >
                 {intervalsFor(day).map((interval, index) => {
@@ -273,9 +336,16 @@ export default function WeekHoursGrid({
                         onMouseDown={(event) => {
                           if (disabled) return;
                           event.stopPropagation();
-                          setInteraction({ kind: 'resize', day, index, edge: 'start' });
+                          setInteraction({
+                            kind: 'resize',
+                            day,
+                            index,
+                            edge: 'start',
+                          });
                         }}
-                        onKeyDown={(event) => handleKeyDown(event, day, index, 'start')}
+                        onKeyDown={(event) =>
+                          handleKeyDown(event, day, index, 'start')
+                        }
                         className="absolute inset-x-0 -top-1 h-2 cursor-ns-resize focus:outline-none focus:ring-2 focus:ring-accent"
                       />
                       <div
@@ -290,9 +360,16 @@ export default function WeekHoursGrid({
                         onMouseDown={(event) => {
                           if (disabled) return;
                           event.stopPropagation();
-                          setInteraction({ kind: 'resize', day, index, edge: 'end' });
+                          setInteraction({
+                            kind: 'resize',
+                            day,
+                            index,
+                            edge: 'end',
+                          });
                         }}
-                        onKeyDown={(event) => handleKeyDown(event, day, index, 'end')}
+                        onKeyDown={(event) =>
+                          handleKeyDown(event, day, index, 'end')
+                        }
                         className="absolute inset-x-0 -bottom-1 h-2 cursor-ns-resize focus:outline-none focus:ring-2 focus:ring-accent"
                       />
                       <button
@@ -312,20 +389,28 @@ export default function WeekHoursGrid({
                   );
                 })}
 
-                {interaction?.kind === 'create' && interaction.day === day && (() => {
-                  const s = Math.min(interaction.anchorWindow, interaction.currentWindow);
-                  const e = Math.max(interaction.anchorWindow, interaction.currentWindow);
-                  return (
-                    <div
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-x-1 rounded-md border border-accent bg-accent/30"
-                      style={{
-                        top: `${(s / WINDOW_MINUTES) * 100}%`,
-                        height: `${((e - s) / WINDOW_MINUTES) * 100}%`,
-                      }}
-                    />
-                  );
-                })()}
+                {interaction?.kind === 'create' &&
+                  interaction.day === day &&
+                  (() => {
+                    const s = Math.min(
+                      interaction.anchorWindow,
+                      interaction.currentWindow,
+                    );
+                    const e = Math.max(
+                      interaction.anchorWindow,
+                      interaction.currentWindow,
+                    );
+                    return (
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-x-1 rounded-md border border-accent bg-accent/30"
+                        style={{
+                          top: `${(s / WINDOW_MINUTES) * 100}%`,
+                          height: `${((e - s) / WINDOW_MINUTES) * 100}%`,
+                        }}
+                      />
+                    );
+                  })()}
               </div>
             ))}
           </div>

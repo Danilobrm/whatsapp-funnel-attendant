@@ -2,7 +2,7 @@ import { render, type RenderOptions } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactElement, ReactNode } from 'react';
 
-import { AuthContext, type AuthContextValue } from '../hooks/useAuth';
+import { AuthContext, type AuthContextValue } from '../hooks/useAuth/useAuth.tsx';
 import { I18nProvider } from '../i18n/index.tsx';
 
 interface Wrapper {

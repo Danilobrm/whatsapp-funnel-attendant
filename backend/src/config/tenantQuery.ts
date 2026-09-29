@@ -1,7 +1,7 @@
 import { query } from "./db.js";
 
 import type { QueryResult, QueryResultRow } from "pg";
-import type { TenantId } from "../modules/tenants/tenant.types.js";
+import type { TenantId } from "../modules/tenants/types/tenant.types.js";
 
 /**
  * Valida que uma query é de fato tenant-scoped, ANTES dela rodar. Pura — não

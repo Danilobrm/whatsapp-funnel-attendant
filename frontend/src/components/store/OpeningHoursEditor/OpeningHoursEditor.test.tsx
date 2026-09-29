@@ -14,6 +14,9 @@ describe('OpeningHoursEditor', () => {
     );
 
     expect(screen.getByText('11:00–15:00')).toBeInTheDocument();
-    expect(screen.getByTestId('handle-mon-0-start')).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByTestId('handle-mon-0-start')).toHaveAttribute(
+      'tabindex',
+      '-1',
+    );
   });
 });

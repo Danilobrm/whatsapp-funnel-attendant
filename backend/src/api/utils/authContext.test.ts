@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { UnauthorizedError } from "../../modules/auth/auth.errors.js";
-import { asTenantId } from "../../modules/tenants/tenant.types.js";
+import { UnauthorizedError } from "../../modules/auth/errors/auth.errors.js";
+import { asTenantId } from "../../modules/tenants/types/tenant.types.js";
 
 import { authOf, tenantOf } from "./authContext.js";
 

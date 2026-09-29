@@ -1,7 +1,7 @@
 import multer from "multer";
 
 import { InvalidMenuError } from "../../modules/errors/invalidMenu.error.js";
-import { ALLOWED_IMAGE_MIME_TYPES } from "../../modules/menu/imageStorage.js";
+import { ALLOWED_IMAGE_MIME_TYPES } from "../../modules/menu/storage/imageStorage.js";
 
 /** 5MB — generoso pra foto de celular, curto o bastante pra não travar o upload. */
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;

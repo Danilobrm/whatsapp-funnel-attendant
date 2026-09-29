@@ -12,15 +12,15 @@ import {
   fetchCurrentUser,
   login as loginRequest,
   type AuthUser,
-} from '../../api/auth';
+} from '../../api/auth/auth.ts';
 import {
   clearAuthStorage,
   getAuthToken,
   getStoredUserJson,
   setAuthToken,
   setStoredUserJson,
-} from '../../api/authToken';
-import { setUnauthorizedHandler } from '../../api/client';
+} from '../../api/authToken/authToken.ts';
+import { setUnauthorizedHandler } from '../../api/client/client.ts';
 
 export interface AuthContextValue {
   user: AuthUser | null;

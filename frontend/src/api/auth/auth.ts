@@ -1,4 +1,4 @@
-import { request } from '../client';
+import { request } from '../client/client.ts';
 
 export interface AuthTenant {
   id: number;

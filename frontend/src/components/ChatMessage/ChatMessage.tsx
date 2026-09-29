@@ -1,3 +1,7 @@
+import type { ReactNode } from 'react';
+
+import { splitLinks } from './linkify.ts';
+
 export type ChatRole = 'user' | 'assistant';
 
 interface ChatMessageProps {
@@ -5,15 +9,37 @@ interface ChatMessageProps {
   content: string;
   pending?: boolean;
   error?: boolean;
-  /** Linha discreta sob a resposta (ex.: quem escreveu — persona ou IA). */
+  /** Linha discreta dentro do balão (ex.: quem escreveu — persona ou IA). */
   note?: string;
 }
 
-function UserBubble({ content }: { content: string }) {
+/**
+ * Balão no estilo WhatsApp. No simulador o dono faz o papel do cliente, então
+ * a mensagem dele (`user`) sai à direita, como no celular de quem digita, e a
+ * resposta do atendente chega à esquerda. Mesmo visual da aba WhatsApp.
+ */
+function Bubble({
+  role,
+  tone = 'default',
+  children,
+}: {
+  role: ChatRole;
+  tone?: 'default' | 'error';
+  children: ReactNode;
+}) {
+  const outgoing = role === 'user';
+  const toneClass = outgoing
+    ? 'rounded-br-md bg-accent text-accent-fg'
+    : tone === 'error'
+      ? 'rounded-bl-md border border-danger-border bg-danger-bg text-danger'
+      : 'rounded-bl-md border border-line bg-canvas text-fg';
   return (
-    <div className="flex justify-end">
-      <div className="max-w-2xl whitespace-pre-wrap rounded-3xl bg-hover px-5 py-3 text-[15px] text-fg">
-        {content}
+    <div className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
+      <div
+        data-role={role}
+        className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-[14px] leading-relaxed shadow-sm ${toneClass}`}
+      >
+        {children}
       </div>
     </div>
   );
@@ -22,16 +48,42 @@ function UserBubble({ content }: { content: string }) {
 function TypingIndicator({ label }: { label: string }) {
   const trimmed = label.replace(/\.+$/, '').trim();
   return (
-    <div className="flex justify-start">
-      <div className="flex max-w-2xl items-center gap-2 px-1 text-[15px] leading-relaxed text-fg-subtle">
-        {trimmed && <span>{trimmed}</span>}
-        <span className="typing-dots inline-flex items-end gap-1">
+    <Bubble role="assistant">
+      <span className="flex items-center gap-2 text-fg-subtle">
+        {trimmed && <span className="sr-only">{trimmed}</span>}
+        <span
+          className="typing-dots inline-flex items-end gap-1 py-1.5"
+          aria-hidden="true"
+        >
           <span className="typing-dot" />
           <span className="typing-dot" />
           <span className="typing-dot" />
         </span>
-      </div>
-    </div>
+      </span>
+    </Bubble>
+  );
+}
+
+/** Texto com os links clicáveis (o cardápio em link chega como URL no chat). */
+function MessageText({ text }: { text: string }) {
+  return (
+    <p className="whitespace-pre-wrap">
+      {splitLinks(text).map((part, index) =>
+        part.type === 'link' ? (
+          <a
+            key={index}
+            href={part.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all underline underline-offset-2"
+          >
+            {part.value}
+          </a>
+        ) : (
+          part.value
+        ),
+      )}
+    </p>
   );
 }
 
@@ -42,20 +94,15 @@ export default function ChatMessage({
   error,
   note,
 }: ChatMessageProps) {
-  if (role === 'user') return <UserBubble content={content} />;
-
-  if (pending) return <TypingIndicator label={content} />;
-
-  const toneClass = error ? 'text-danger' : 'text-fg-muted';
+  if (role === 'assistant' && pending)
+    return <TypingIndicator label={content} />;
 
   return (
-    <div className="flex justify-start">
-      <div
-        className={`max-w-2xl px-1 text-[15px] leading-relaxed ${toneClass}`}
-      >
-        <p className="whitespace-pre-wrap">{content}</p>
-        {note && <p className="mt-1 text-[11px] text-fg-subtle">{note}</p>}
-      </div>
-    </div>
+    <Bubble role={role} tone={error ? 'error' : 'default'}>
+      <MessageText text={content} />
+      {note && (
+        <p className="mt-0.5 text-right text-[11px] text-fg-subtle">{note}</p>
+      )}
+    </Bubble>
   );
 }

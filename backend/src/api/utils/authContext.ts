@@ -1,7 +1,7 @@
-import { UnauthorizedError } from "../../modules/auth/auth.errors.js";
+import { UnauthorizedError } from "../../modules/auth/errors/auth.errors.js";
 
-import type { RequestAuth } from "../../modules/auth/auth.types.js";
-import type { TenantId } from "../../modules/tenants/tenant.types.js";
+import type { RequestAuth } from "../../modules/auth/types/auth.types.js";
+import type { TenantId } from "../../modules/tenants/types/tenant.types.js";
 import type { Request } from "express";
 
 /**

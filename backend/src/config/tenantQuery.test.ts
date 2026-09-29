@@ -5,7 +5,7 @@ vi.mock("./db.js", () => ({
 }));
 
 const db = await import("./db.js");
-const { asTenantId } = await import("../modules/tenants/tenant.types.js");
+const { asTenantId } = await import("../modules/tenants/types/tenant.types.js");
 const { assertTenantScoped, tenantQuery } = await import("./tenantQuery.js");
 
 const query = db.query as unknown as ReturnType<typeof vi.fn>;
@@ -68,14 +68,11 @@ describe("tenantQuery", () => {
   it("delega para query() quando a validação passa", async () => {
     query.mockResolvedValue({ rows: [] });
 
-    await tenantQuery(TENANT, "SELECT * FROM x WHERE tenant_id = $1", [
+    await tenantQuery(TENANT, "SELECT * FROM x WHERE tenant_id = $1", [TENANT]);
+
+    expect(query).toHaveBeenCalledWith("SELECT * FROM x WHERE tenant_id = $1", [
       TENANT,
     ]);
-
-    expect(query).toHaveBeenCalledWith(
-      "SELECT * FROM x WHERE tenant_id = $1",
-      [TENANT],
-    );
   });
 
   it("nunca chega a chamar query() quando a validação falha", async () => {

@@ -118,7 +118,9 @@ export default function Dropdown({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? `${baseId}-listbox` : undefined}
-        aria-activedescendant={open ? `${baseId}-option-${highlighted}` : undefined}
+        aria-activedescendant={
+          open ? `${baseId}-option-${highlighted}` : undefined
+        }
         aria-label={ariaLabel}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={onButtonKeyDown}
@@ -158,7 +160,11 @@ export default function Dropdown({
             >
               <span className="truncate">{option.label}</span>
               {option.value === value && (
-                <Check className="h-4 w-4 flex-none" strokeWidth={2} aria-hidden="true" />
+                <Check
+                  className="h-4 w-4 flex-none"
+                  strokeWidth={2}
+                  aria-hidden="true"
+                />
               )}
             </li>
           ))}
