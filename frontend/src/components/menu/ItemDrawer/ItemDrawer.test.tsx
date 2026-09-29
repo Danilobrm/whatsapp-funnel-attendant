@@ -1,10 +1,27 @@
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders, screen } from '../../../test/render.tsx';
 import ItemDrawer from './ItemDrawer.tsx';
 
+vi.mock('../../../api/menu', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../api/menu')>();
+  return { ...actual, uploadItemImage: vi.fn() };
+});
+
+import { uploadItemImage, MenuRejectedError } from '../../../api/menu';
+
 import type { MenuCategory, MenuItem } from '../../../api/menu';
+
+const uploadMock = vi.mocked(uploadItemImage);
+
+function pngFile(name = 'calabresa.png') {
+  return new File(['fake-bytes'], name, { type: 'image/png' });
+}
+
+beforeEach(() => {
+  uploadMock.mockReset();
+});
 
 const CATEGORIES: MenuCategory[] = [
   { id: 1, name: 'Pizzas', position: 0, active: true, items: [] },
@@ -142,22 +159,61 @@ describe('ItemDrawer — creating an item', () => {
     expect(await screen.findByText('Preencha o nome.')).toBeInTheDocument();
   });
 
-  it('shows the placeholder icon with no image, and sends the typed URL', async () => {
-    const { onSave } = renderDrawer();
-
+  it('shows the placeholder icon with no image', () => {
+    renderDrawer();
     expect(screen.getByRole('img', { name: 'Sem imagem' })).toBeInTheDocument();
+    expect(screen.getByText('Enviar foto')).toBeInTheDocument();
+  });
+
+  it('uploads the chosen file and saves with the returned URL', async () => {
+    uploadMock.mockResolvedValue({ url: '/produtos/abc.png' });
+    const { onSave } = renderDrawer();
 
     await userEvent.type(screen.getByLabelText('Nome'), 'Calabresa');
     await userEvent.type(screen.getByLabelText('Preço'), '45,00');
-    await userEvent.type(
-      screen.getByLabelText('Imagem'),
-      'https://example.com/calabresa.jpg',
+
+    const file = pngFile();
+    await userEvent.upload(screen.getByLabelText('Imagem'), file);
+
+    expect(uploadMock).toHaveBeenCalledWith(file);
+    await screen.findByText('Trocar foto');
+    expect(screen.getByRole('img', { name: 'Calabresa' })).toHaveAttribute(
+      'src',
+      '/produtos/abc.png',
     );
+
     await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
     expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ imageUrl: 'https://example.com/calabresa.jpg' }),
+      expect.objectContaining({ imageUrl: '/produtos/abc.png' }),
     );
+  });
+
+  it('shows the translated error when the upload is rejected (wrong type)', async () => {
+    uploadMock.mockRejectedValue(
+      new MenuRejectedError('image_invalid_type', 'image'),
+    );
+    renderDrawer();
+
+    await userEvent.upload(screen.getByLabelText('Imagem'), pngFile('foto.txt'));
+
+    expect(
+      await screen.findByText(
+        'Formato de imagem não aceito. Use JPG, PNG, WEBP ou GIF.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('removes the uploaded image', async () => {
+    uploadMock.mockResolvedValue({ url: '/produtos/abc.png' });
+    renderDrawer();
+
+    await userEvent.upload(screen.getByLabelText('Imagem'), pngFile());
+    await screen.findByText('Trocar foto');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remover' }));
+
+    expect(screen.getByText('Enviar foto')).toBeInTheDocument();
   });
 });
 
@@ -182,6 +238,10 @@ describe('ItemDrawer — editing an item', () => {
     expect(screen.getByDisplayValue('Suco Natural')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Polpa de fruta')).toBeInTheDocument();
     expect(screen.getByLabelText('Preço')).toHaveValue('9,00');
-    expect(screen.getByDisplayValue('https://example.com/suco.jpg')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Suco Natural' })).toHaveAttribute(
+      'src',
+      'https://example.com/suco.jpg',
+    );
+    expect(screen.getByText('Trocar foto')).toBeInTheDocument();
   });
 });

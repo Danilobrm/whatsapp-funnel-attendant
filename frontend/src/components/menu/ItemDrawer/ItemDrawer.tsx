@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, Upload, X } from 'lucide-react';
 
 import { parseBRLInput } from '../../../lib/money.ts';
 import Dropdown from '../../Dropdown';
 import ItemImage from '../ItemImage';
 import { useT } from '../../../i18n/index.tsx';
 
+import { MenuRejectedError, uploadItemImage } from '../../../api/menu';
 import type {
   MenuCategory,
   MenuItem,
@@ -80,6 +81,8 @@ export default function ItemDrawer({
   const [name, setName] = useState(item?.name ?? '');
   const [description, setDescription] = useState(item?.description ?? '');
   const [imageUrl, setImageUrl] = useState(item?.imageUrl ?? '');
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
   const [pricingMode, setPricingMode] = useState<'single' | 'sizes'>(
     item && item.sizes.length > 0 ? 'sizes' : 'single',
   );
@@ -103,6 +106,30 @@ export default function ItemDrawer({
   }, [open, onClose]);
 
   if (!open) return null;
+
+  async function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = ''; // permite escolher o mesmo arquivo de novo depois
+    if (!file) return;
+
+    setImageError(null);
+    setUploadingImage(true);
+    try {
+      const result = await uploadItemImage(file);
+      setImageUrl(result.url);
+    } catch (err) {
+      const code = err instanceof MenuRejectedError ? err.code : 'generic';
+      const key = `menu.errors.${code}`;
+      setImageError(t(key) === key ? t('menu.errors.generic') : t(key));
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
+  function removeImage() {
+    setImageUrl('');
+    setImageError(null);
+  }
 
   function addSize() {
     setSizes((current) => [...current, { name: '', priceText: '' }]);
@@ -296,30 +323,55 @@ export default function ItemDrawer({
             </div>
 
             <div>
-              <label
-                htmlFor="item-image"
-                className="block text-sm font-medium text-fg"
-              >
+              <span className="block text-sm font-medium text-fg">
                 {t('menu.item.image')}
-              </label>
+              </span>
               <div className="mt-2 flex items-start gap-3">
                 <ItemImage
-                  src={imageUrl.trim() || null}
+                  src={imageUrl || null}
                   alt={name || t('menu.item.imagePlaceholderAlt')}
                   size="md"
                 />
-                <div className="min-w-0 flex-1">
-                  <input
-                    id="item-image"
-                    type="text"
-                    inputMode="url"
-                    placeholder={t('menu.item.imageUrlPlaceholder')}
-                    value={imageUrl}
-                    onChange={(e) => setImageUrl(e.target.value)}
-                    className="w-full rounded-xl border border-line bg-canvas px-3 py-2 text-sm text-fg outline-none focus:border-accent"
-                  />
-                  <p className="mt-2 text-[13px] text-fg-muted">
-                    {t('menu.item.imageHint')}
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label
+                      htmlFor="item-image-upload"
+                      className={`inline-flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-sm font-medium text-fg transition hover:bg-hover ${
+                        uploadingImage
+                          ? 'pointer-events-none opacity-60'
+                          : 'cursor-pointer'
+                      }`}
+                    >
+                      <Upload className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                      {uploadingImage
+                        ? t('menu.item.imageUploading')
+                        : imageUrl
+                          ? t('menu.item.imageChange')
+                          : t('menu.item.imageUpload')}
+                    </label>
+                    <input
+                      id="item-image-upload"
+                      type="file"
+                      accept="image/*"
+                      aria-label={t('menu.item.image')}
+                      disabled={uploadingImage}
+                      onChange={(e) => void handleFileChange(e)}
+                      className="sr-only"
+                    />
+                    {imageUrl && !uploadingImage && (
+                      <button
+                        type="button"
+                        onClick={removeImage}
+                        className="text-[13px] font-medium text-fg-muted transition hover:text-danger"
+                      >
+                        {t('menu.item.imageRemove')}
+                      </button>
+                    )}
+                  </div>
+                  <p
+                    className={`text-[13px] ${imageError ? 'text-danger' : 'text-fg-muted'}`}
+                  >
+                    {imageError ?? t('menu.item.imageHint')}
                   </p>
                 </div>
               </div>
@@ -577,7 +629,7 @@ export default function ItemDrawer({
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={saving || name.trim().length === 0}
+            disabled={saving || uploadingImage || name.trim().length === 0}
             className="rounded-xl bg-accent px-4 py-2 text-sm font-medium text-accent-fg transition hover:opacity-90 disabled:opacity-60"
           >
             {saving ? t('menu.item.saving') : t('menu.item.save')}
