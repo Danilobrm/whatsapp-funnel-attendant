@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MENU, PRICING_SETTINGS, ZONES } from "../../order/utils/fixtures.test-util.js";
+import {
+  MENU,
+  PRICING_SETTINGS,
+  ZONES,
+} from "../../order/utils/fixtures.test-util.js";
 import { emptyCart } from "../../order/types/cart.types.js";
 
 vi.mock("../../conversation/repositories/conversation.repository.js", () => ({
@@ -9,7 +13,9 @@ vi.mock("../../conversation/repositories/conversation.repository.js", () => ({
 vi.mock("../../conversation/services/conversation.service.js", () => ({
   sendOutbound: vi.fn(),
 }));
-vi.mock("../../menu/services/menu.service.js", () => ({ getPublishedMenu: vi.fn() }));
+vi.mock("../../menu/services/menu.service.js", () => ({
+  getPublishedMenu: vi.fn(),
+}));
 vi.mock("../../order/services/cart.service.js", () => ({
   getCart: vi.fn(),
   saveEditedCart: vi.fn(),
@@ -18,7 +24,9 @@ vi.mock("../../store/services/store.service.js", () => ({
   getStoreSettings: vi.fn(),
   listZones: vi.fn(),
 }));
-vi.mock("../../tenants/repositories/tenant.repository.js", () => ({ findTenantById: vi.fn() }));
+vi.mock("../../tenants/repositories/tenant.repository.js", () => ({
+  findTenantById: vi.fn(),
+}));
 vi.mock("../repositories/menuLink.repository.js", () => ({
   insertMenuLinkEvent: vi.fn(),
   findActiveMenuLink: vi.fn(),
@@ -27,12 +35,15 @@ vi.mock("../repositories/menuLink.repository.js", () => ({
   findMenuLinkByCode: vi.fn(),
 }));
 
-const convRepo = await import("../../conversation/repositories/conversation.repository.js");
-const convService = await import("../../conversation/services/conversation.service.js");
+const convRepo =
+  await import("../../conversation/repositories/conversation.repository.js");
+const convService =
+  await import("../../conversation/services/conversation.service.js");
 const menuService = await import("../../menu/services/menu.service.js");
 const cartService = await import("../../order/services/cart.service.js");
 const storeService = await import("../../store/services/store.service.js");
-const tenantRepo = await import("../../tenants/repositories/tenant.repository.js");
+const tenantRepo =
+  await import("../../tenants/repositories/tenant.repository.js");
 const linkRepo = await import("../repositories/menuLink.repository.js");
 const { env } = await import("../../../config/env.js");
 const { createMenuLink, getPublicMenuView, confirmPublicCart } =
