@@ -260,6 +260,72 @@ Um pedido feito do celular pelo WhatsApp percorre exatamente o mesmo caminho que
 
 ---
 
+## Fase N — Migração do backend para NestJS
+
+Branch `refactor/migrar-backend-nest` (parte do commit `9f75ab9`). **Sem mudança de contrato**: mesmas rotas, mesmos status, mesmo JSON, mesmo banco, frontend intocado. Uma fase por vez, cada módulo termina com `npm test && npm run lint && npm run typecheck` verdes.
+
+### Decisões (confirmar antes de começar)
+
+- [ ] **Services continuam funções puras** (`tenantId` primeiro, `vi.mock` nos testes). Nest entra em controllers, módulos, guards, filters e pipes. Motivo: reescrever ~100 arquivos de service/repository em classes não traz ganho e arrisca o backstop `tenantQuery`. Consequência honesta: DI quase não é usada nesta fase. Converter service a service para `@Injectable()` é fase posterior, opcional.
+- [ ] **Plataforma Express** (`@nestjs/platform-express`): mantém `multer`, `cors`, `express.static` e o SSE atual.
+- [ ] **Ponte de migração**: `NestFactory.create(AppModule, new ExpressAdapter(legacyApp))` — as rotas ainda não portadas continuam no Express legado, as portadas saem do Nest. Some quando o último módulo migrar.
+- [ ] **Decorators sem `emitDecoratorMetadata` confiável**: `tsx` e o esbuild do Vitest não emitem metadata. Usar `@Inject(Token)` explícito OU trocar por SWC (`unplugin-swc` no Vitest, `@swc-node/register` no dev). Decidir na Etapa 0.
+
+### Etapa 0 — Setup
+
+- [ ] Deps: `@nestjs/common @nestjs/core @nestjs/platform-express @nestjs/testing reflect-metadata rxjs`.
+- [ ] `tsconfig`: `experimentalDecorators`, `emitDecoratorMetadata`; Vitest com SWC; `npm run dev` continua subindo.
+- [ ] `src/main.ts`: `assertProductionSecrets` → `runMigrations` → `NestFactory` → `listen` (mesma ordem de boot de hoje). `rawBody: true`, CORS igual, `/produtos` estático.
+- [ ] `AppModule` vazio + ponte com o Express legado. Suíte inteira verde, nada portado ainda.
+
+### Etapa 1 — Transversais
+
+- [ ] `AuthGuard` (porta `requireAuth`; `verifyAuthToken` segue devolvendo union) + decorators `@Auth()` / `@Tenant()` no lugar de `authOf/tenantOf`. Guard no **módulo/controller inteiro**, não rota a rota (mesma garantia do guard-no-mount de hoje). Rotas públicas marcadas explicitamente (`@Public()`).
+- [ ] `AllExceptionsFilter` (`@Catch()`): porta 1:1 o `errorHandler` (mapa erro→status→corpo, 500 com mensagem fixa, `multer` incluso). Testes do `errorHandler` viram testes do filter — mesmos casos.
+- [ ] `RateLimitGuard` (janela deslizante por IP, GET 60/min, POST 20/min, mesmo `RateLimitedError`).
+- [ ] `rawBody` do webhook: `req.rawBody` do Nest no lugar do `verify` do `express.json`. **Prova obrigatória**: teste com payload assinado real (bytes ≠ `JSON.stringify(body)`).
+- [ ] Regra `error-handling.md`: `asyncHandler` deixa de existir (Nest captura rejeição). Reescrever a regra para "todo erro é classe tipada mapeada no `AllExceptionsFilter`".
+
+### Etapa 2 — Portar módulo a módulo
+
+Ordem (do mais simples ao mais arriscado): `health` → `auth` → `settings` → `dashboard` → `store` → `menu` (upload `POST /api/menu/images` via `FileInterceptor`) → `simulator` → `order` (SSE) → `menulink` (público + rate limit) → `whatsapp` (webhook).
+
+Por módulo:
+- [ ] `<mod>.module.ts` + controller com decorators (`@Controller`, `@Get`…); a lógica continua chamando as funções de `services/`.
+- [ ] Os testes atuais do controller são o **contrato**: portar para `Test.createTestingModule` + supertest e exigir status/JSON idênticos. Nenhum teste apagado sem equivalente.
+- [ ] Apagar `routes/<mod>Routes.ts` e o mount em `api/server.ts` do módulo.
+
+Pontos de atenção:
+- **SSE (`order`)**: manter `@Res()` com escrita manual, `event:`/`: ping` a cada 25 s, cleanup no `close`. `@Sse()` do Nest muda o formato — não usar sem provar equivalência.
+- **`whatsapp`**: responde 200 **antes** de processar; dedup por `external_id` intacto; `processWebhook` sequencial.
+- **`menulink`**: 401 `invalid_menu_link`/`expired_menu_link` só com `code`; `RateLimitGuard` antes de tocar o banco.
+- **Multi-tenant**: `tenantId` continua vindo de `@Tenant()` (branded `TenantId`), nunca do body. Teste de isolamento ponta a ponta por módulo portado.
+- Ordem de rotas (`/stream` antes de `/:id`) e `dev-sample` inexistente em produção (404, não 403).
+
+### Etapa 3 — Limpeza
+
+- [ ] Remover `api/server.ts`, `api/routes`, `api/middlewares`, `api/utils` (`asyncHandler`, `authContext`), ponte legado, `express.json` manual.
+- [ ] `createServer()` dos testes → helper `createTestApp()` sobre `Test.createTestingModule`.
+- [ ] `Dockerfile`/`build`/`start` (`dist/main.js`), `seed`, `README`.
+- [ ] Atualizar `CLAUDE.md` (stack, arquitetura, rotas, rules) e `.claude/rules/testing.md` (controller test = Nest testing module).
+
+### Testes obrigatórios
+
+- Contrato HTTP idêntico por rota (status + JSON + headers relevantes) antes/depois.
+- Filter: um caso por classe de erro + 500 sem vazar `error.message`.
+- Guard: sem token, token inválido, expirado, algoritmo fora do allowlist.
+- Webhook: assinatura válida, inválida, ausente, sem secret (fail closed), retry duplicado.
+- SSE: heartbeat, evento por tenant (não vaza entre tenants), desconexão limpa o listener.
+- Boot: falha de `assertProductionSecrets`/migration → `exit(1)`.
+
+### Pronto quando
+
+`npm test`, `lint`, `typecheck` verdes; nenhum arquivo em `api/` além do que o Nest exigir; fluxo completo no simulador (mensagem → agente → pedido → quadro em tempo real) e webhook com assinatura real funcionam idênticos ao commit `9f75ab9`.
+
+### Fora do escopo
+
+Converter services/repositories em classes, trocar Express por Fastify, mexer no frontend, mudar rotas ou schema.
+
 ## Fora da v1
 
 - Pix com confirmação automática de pagamento (link / cobrança dinâmica).
