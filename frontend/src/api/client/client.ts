@@ -69,10 +69,16 @@ export async function request<T>(
 ): Promise<T> {
   const { method = 'GET', body, signal, auth = true, onStatus } = options;
 
+  const isFormData = body instanceof FormData;
+
   const headers: Record<string, string> = {};
   // Content-Type só quando há corpo — preserva o formato de requisição atual,
-  // que os testes de api/* afirmam byte a byte.
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  // que os testes de api/* afirmam byte a byte. FormData é a exceção: o
+  // browser precisa escrever o boundary do multipart sozinho, então NÃO
+  // setamos o header (setar manualmente quebra o parse no servidor).
+  if (body !== undefined && !isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (auth) {
     const token = getAuthToken();
@@ -83,7 +89,7 @@ export async function request<T>(
     method,
     headers,
     ...(signal ? { signal } : {}),
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    ...(body === undefined ? {} : { body: isFormData ? body : JSON.stringify(body) }),
   });
 
   // onStatus ANTES de `response.ok`: o mapper recebe o corpo já
