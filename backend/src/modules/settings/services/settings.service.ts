@@ -1,4 +1,7 @@
-import { findBotSettings, saveBotSettings } from "../repositories/settings.repository.js";
+import {
+  findBotSettings,
+  saveBotSettings,
+} from "../repositories/settings.repository.js";
 import {
   BOT_GENDERS,
   BOT_PERSONALITIES,

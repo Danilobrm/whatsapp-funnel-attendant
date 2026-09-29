@@ -14,7 +14,8 @@ vi.mock("../../store/services/store.service.js", () => ({
 }));
 
 const repo = await import("../repositories/dashboard.repository.js");
-const funnel = await import("../../menulink/repositories/menuLink.repository.js");
+const funnel =
+  await import("../../menulink/repositories/menuLink.repository.js");
 const store = await import("../../store/services/store.service.js");
 const { getDashboard } = await import("./dashboard.service.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");

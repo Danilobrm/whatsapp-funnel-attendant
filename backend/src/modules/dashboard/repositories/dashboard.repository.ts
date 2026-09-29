@@ -1,7 +1,11 @@
 import { tenantQuery } from "../../../config/tenantQuery.js";
 
 import type { TenantId } from "../../tenants/types/tenant.types.js";
-import type { BreakdownEntry, DailyTotal, TopItem } from "../types/dashboard.types.js";
+import type {
+  BreakdownEntry,
+  DailyTotal,
+  TopItem,
+} from "../types/dashboard.types.js";
 
 /**
  * Leituras agregadas do dashboard. "Válido" = tudo menos recusado/cancelado:

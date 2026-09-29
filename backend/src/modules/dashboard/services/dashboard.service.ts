@@ -8,7 +8,11 @@ import {
   dailyTotals,
   topItems,
 } from "../repositories/dashboard.repository.js";
-import { dayKeyInZone, fillDays, ticketCents } from "../utils/dashboard.stats.js";
+import {
+  dayKeyInZone,
+  fillDays,
+  ticketCents,
+} from "../utils/dashboard.stats.js";
 
 import type { TenantId } from "../../tenants/types/tenant.types.js";
 import type { Dashboard } from "../types/dashboard.types.js";

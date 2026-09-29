@@ -3,11 +3,9 @@ import express, { type Express, type Request } from "express";
 
 import { env } from "../config/env.js";
 import { productImagesDir } from "../modules/menu/storage/imageStorage.js";
-import { dashboardRoutes } from "../modules/dashboard/routes/dashboardRoutes.js";
 import { menuRoutes } from "../modules/menu/routes/menuRoutes.js";
 import { createPublicRoutes } from "../modules/menulink/routes/publicRoutes.js";
 import { createOrderRoutes } from "../modules/order/routes/orderRoutes.js";
-import { settingsRoutes } from "../modules/settings/routes/settingsRoutes.js";
 import { simulatorRoutes } from "../modules/simulator/routes/simulatorRoutes.js";
 import { storeRoutes } from "../modules/store/routes/storeRoutes.js";
 import { whatsappRoutes } from "../modules/whatsapp/routes/whatsappRoutes.js";
@@ -47,12 +45,10 @@ export function createServer(): Express {
   // ---- Superfície autenticada ----
   // O guard fica no MOUNT, não rota a rota: esquecer é impossível, porque não
   // existe lugar onde omitir.
-  app.use("/api/settings", requireAuth, settingsRoutes);
   app.use("/api/simulator", requireAuth, simulatorRoutes);
   app.use("/api/menu", requireAuth, menuRoutes);
   app.use("/api/store", requireAuth, storeRoutes);
   app.use("/api/orders", requireAuth, createOrderRoutes());
-  app.use("/api/dashboard", requireAuth, dashboardRoutes);
 
   app.use(errorHandler);
 
