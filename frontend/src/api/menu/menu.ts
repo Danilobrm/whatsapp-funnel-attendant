@@ -167,3 +167,10 @@ export function reorderItems(orderedIds: number[]): Promise<void> {
     body: { orderedIds },
   });
 }
+
+/** Envia a foto do produto (multipart) e devolve a URL pública — sem link, só upload. */
+export function uploadItemImage(file: File): Promise<{ url: string }> {
+  const form = new FormData();
+  form.append('image', file);
+  return request('/api/menu/images', { method: 'POST', body: form, onStatus });
+}
