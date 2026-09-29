@@ -8,16 +8,16 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
  * outros testes de controller) não pega uma rota montada sem guard: só o
  * roteador montado sabe se ele está lá.
  */
-vi.mock("../config/db.js", () => ({
+vi.mock("./config/db.js", () => ({
   query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
   pool: { connect: vi.fn(), end: vi.fn() },
 }));
 
-vi.mock("../modules/ai/clients/llm-client.js", () => ({
+vi.mock("./modules/ai/clients/llm-client.js", () => ({
   createChatLlm: vi.fn(),
 }));
 
-vi.mock("../modules/whatsapp/services/whatsapp.service.js", () => ({
+vi.mock("./modules/whatsapp/services/whatsapp.service.js", () => ({
   processWebhook: vi.fn(async () => {}),
 }));
 
@@ -26,10 +26,10 @@ const VERIFY_TOKEN = "test-verify-token";
 vi.stubEnv("WHATSAPP_APP_SECRET", APP_SECRET);
 vi.stubEnv("WHATSAPP_VERIFY_TOKEN", VERIFY_TOKEN);
 
-const { signAuthToken } = await import("../modules/auth/utils/jwt.js");
+const { signAuthToken } = await import("./modules/auth/utils/jwt.js");
 const { processWebhook } =
-  await import("../modules/whatsapp/services/whatsapp.service.js");
-const { createApp } = await import("../bootstrap.js");
+  await import("./modules/whatsapp/services/whatsapp.service.js");
+const { createApp } = await import("./bootstrap.js");
 
 // Contrato HTTP de ponta a ponta: passa pelo app COMPLETO (Nest + Express
 // legado), então continua valendo enquanto os módulos migram de um para o outro.
@@ -205,7 +205,7 @@ describe("pedidos", () => {
   });
 
   it("POST /api/orders/dev-sample NÃO existe em produção (404)", async () => {
-    const { env } = await import("../config/env.js");
+    const { env } = await import("./config/env.js");
     const original = env.nodeEnv;
     env.nodeEnv = "production";
     try {

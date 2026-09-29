@@ -2,33 +2,35 @@ import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 
 import { AppModule } from "./app.module.js";
-import { createServer } from "./api/server.js";
+import { env } from "./config/env.js";
+import { productImagesDir } from "./modules/menu/storage/imageStorage.js";
 
-import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { Type } from "@nestjs/common";
-import type { RequestListener } from "node:http";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 
 /**
- * Sobe o Nest com o Express legado montado ANTES das rotas do Nest.
+ * Monta o app Nest completo. `root` existe para o teste registrar um módulo
+ * próprio; produção usa o `AppModule`.
  *
- * Ordem importa: `app.use(legacy)` acontece antes de `init()`, que é quando o
- * Nest registra suas rotas. Uma requisição entra no legado; se nenhuma rota
- * dele casa, o Express segue adiante e chega no Nest (que responde 404 se
- * também não tiver a rota). O legado já leu o corpo (`req._body`), então o
- * body-parser do Nest o ignora — e o `rawBody` do webhook segue vindo do
- * `verify` do legado até o módulo `whatsapp` ser portado.
- *
- * `root` e `legacy` existem para o teste registrar um módulo e um legado
- * próprios; produção usa o `AppModule` e o `createServer()`.
+ * - `rawBody: true`: a assinatura do webhook da Meta é sobre os BYTES originais
+ *   do corpo; o JSON parseado não os reproduz (`WebhookSignatureGuard` lê
+ *   `req.rawBody`).
+ * - CORS não precisa de ajuste para o Bearer: com apenas `origin` definido, o
+ *   pacote `cors` reflete o `Access-Control-Request-Headers` do preflight.
+ * - Fotos de produto: públicas (o painel usa a URL direto em `<img>`), como
+ *   seria um bucket S3 público. Só o UPLOAD (`POST /api/menu/images`) exige
+ *   login — servir o arquivo depois de gravado não precisa.
  */
 export async function createApp(
   root: Type<unknown> = AppModule,
-  legacy: RequestListener = createServer(),
 ): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(root, {
     logger: ["error", "warn"],
     rawBody: true,
   });
-  app.use(legacy);
+
+  app.enableCors({ origin: env.corsOrigin });
+  app.useStaticAssets(productImagesDir(), { prefix: "/produtos" });
+
   return app;
 }

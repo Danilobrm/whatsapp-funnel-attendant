@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:fs/promises", () => ({
@@ -21,6 +24,15 @@ const randomUUID = crypto.randomUUID as unknown as ReturnType<typeof vi.fn>;
 beforeEach(() => {
   vi.resetAllMocks();
   randomUUID.mockReturnValue("11111111-1111-1111-1111-111111111111");
+});
+
+describe("productImagesDir", () => {
+  it("é <backend>/produtos — a pasta do package.json, não uma subpasta de src/", () => {
+    const backendRoot = dirname(productImagesDir());
+
+    expect(existsSync(join(backendRoot, "package.json"))).toBe(true);
+    expect(basename(productImagesDir())).toBe("produtos");
+  });
 });
 
 describe("saveProductImage", () => {

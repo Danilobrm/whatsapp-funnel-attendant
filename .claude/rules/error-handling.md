@@ -4,38 +4,29 @@ Errors are part of the API contract. Every failure that reaches an HTTP client M
 
 ## Non-negotiable invariants
 
-1. **Async handlers cannot leak rejections.** Express 4 does NOT auto-forward rejections from an `async` `RequestHandler` to the error middleware. An unhandled rejection eventually crashes Node. Wrap every async handler with `asyncHandler(fn)` from `backend/src/api/utils/asyncHandler.ts` OR call `next(err)` explicitly in a `try/catch`. **Never leave a bare `async (req, res) => { ... }` handler.**
-2. **The terminal `errorHandler` middleware is the single mapper from Error → HTTP.** Controllers/services throw typed errors, the middleware translates them. Do not `res.status(500).json(...)` inside a controller for a case that could be represented by an error class.
-3. **Use typed error classes for known domain rejections.** Example: `InvalidSettingsError(code, field)` → mapped to HTTP 422 in `errorHandler`. When adding a new failure mode with its own HTTP status or client-facing payload, add a new class and a new `instanceof` branch in `errorHandler`. Do NOT overload existing classes with unrelated codes.
+1. **Async handlers cannot leak rejections.** In Nest, a rejected `async` handler is forwarded to the exception filter (no `asyncHandler` needed). Never swallow the rejection: a floating promise outside the request path (e.g. the webhook's post-response processing) MUST carry its own `.catch` that logs.
+2. **`mapError` (applied by the `AllExceptionsFilter`) is the single mapper from Error → HTTP.** Controllers/services throw typed errors, the filter translates them. Do not `res.status(500).json(...)` inside a controller for a case that could be represented by an error class.
+3. **Use typed error classes for known domain rejections.** Example: `InvalidSettingsError(code, field)` → mapped to HTTP 422 in `mapError`. When adding a new failure mode with its own HTTP status or client-facing payload, add a new class and a new `instanceof` branch in `common/http/errorMapping.ts`. Do NOT overload existing classes with unrelated codes.
 4. **User-facing failure messages must be i18n keys or come from a translatable table** — never a raw pt-BR string frozen in the service. The service can return a stable `code`; the frontend or a translation layer resolves the human text. See `chat.errors.*` and `settings.errors.*` in `frontend/src/i18n/translations/*.ts` for the pattern.
 5. **Guardrails return, never throw**, when they are checking user input for a **validation** result. `classifyMessage` (`modules/ai/guardrails.ts`) returns a `MessageQualityResult`; `verifyAuthToken` returns a discriminated union. Callers decide to throw a typed error or route the code differently. This keeps pure functions pure and testable.
 
-## The crash lesson (inherited from faq-chatbot)
+## The crash lesson (inherited from faq-chatbot, Express era)
 
-Before the fix, a service that threw inside a bare async handler flowed:
-
-```
-service(input) → guardrail returns { ok: false, code }
-   → throw new SomeTypedError(code, ...)
-   → async controller rejects
-   → Express 4 does NOT forward the rejection
-   → Node unhandledRejection → process exits
-```
-
-`errorHandler.ts` already knew how to map the typed error → 422, but the middleware never ran because the rejection was dropped between the handler and Express. The fix is at the wiring layer, not the throw site — wrap the handler.
+Under Express 4 a service that threw inside a bare `async` handler was never forwarded to the error middleware: Node hit `unhandledRejection` and exited, even though the mapper already knew the typed error. That whole class of bug is gone in Nest (the exception filter receives every rejection), but the lesson stands for anything OUTSIDE the request path — a promise nobody awaits needs its own `.catch` that logs.
 
 ## Correct patterns
 
-**Controller — every async handler wrapped:**
+**Controller — HTTP translation only, errors just propagate:**
 
 ```ts
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { updateBotSettings } from "../../modules/settings/settings.service.js";
-
-export const putSettings = asyncHandler(async (req, res) => {
-  const settings = await updateBotSettings(tenantOf(req), req.body);
-  res.json({ settings });
-});
+@Controller("api/settings")
+export class SettingsController {
+  @Put()
+  async put(@Tenant() tenantId: TenantId, @Body() body: unknown) {
+    const settings = await updateBotSettings(tenantId, body);
+    return { settings, preview: buildPersonaTexts(settings) };
+  }
+}
 ```
 
 **Service — throw typed error:**
@@ -46,15 +37,14 @@ if (!gate.ok) {
 }
 ```
 
-**Middleware — one branch per typed error, generic 500 fallback:**
+**`mapError` — one branch per typed error, generic 500 fallback:**
 
 ```ts
 if (error instanceof InvalidSettingsError) {
-  res.status(422).json({ status: "rejected", code: error.code, reason: error.reason });
-  return;
+  return known(422, { status: "invalid", code: error.code, field: error.field });
 }
 // ...other typed branches...
-res.status(500).json({ status: "error", message: safeMessage(error) });
+return { status: 500, body: { status: "error", code: "internal_error", message: "Erro interno…" }, unhandled: true };
 ```
 
 **Frontend — code drives the UI, not the raw message:**
@@ -69,31 +59,33 @@ if (res.status === "rejected") {
 
 ## What NOT to do
 
-- Bare `async (req, res) => { ... }` — will crash on throw.
-- `try/catch` in every controller returning `res.status(500).json(...)` — duplicates work of `errorHandler`.
+- A floating promise (`somethingAsync()` without `await`/`.catch`) in a handler — the rejection escapes the filter.
+- `try/catch` in every controller returning `res.status(500).json(...)` — duplicates the work of `mapError`.
 - Throwing raw `Error("string in pt-BR that the frontend will render verbatim")` — kills i18n.
 - Swallowing errors with `.catch(() => {})` inside services to "keep the endpoint working" — hides real bugs. If a failure is recoverable, return a value; if not, throw and let the middleware map it.
-- Adding new HTTP status codes ad-hoc in controllers instead of extending `errorHandler`.
+- Adding new HTTP status codes ad-hoc in controllers instead of extending `mapError`.
 - Logging errors and silently returning 200 — a broken write must return a non-2xx.
 
 ## Adding a new domain error
 
 1. Extend the union of codes (e.g. `InvalidSettingsCode`) in the module that owns the concept.
 2. Reuse the existing error class if the HTTP semantics match; otherwise create a new class in the same module and export it.
-3. Add an `instanceof` branch in `common/http/errorMapping.ts` (`mapError`) — `errorHandler` and `AllExceptionsFilter` both use it.
+3. Add an `instanceof` branch in `common/http/errorMapping.ts` (`mapError`); the `AllExceptionsFilter` applies it.
 4. Add the code + translation key in `frontend/src/i18n/translations/<locale>.ts` for every locale.
 
 ## Why
 
 Crashes lose in-flight requests, kill websocket subscribers, and rotate the container in prod — a single bad `POST` becomes an outage. Typed errors + a single mapper keep the API contract stable, the logs actionable, and the frontend able to render specific UX (retry vs. edit vs. contact support) per code instead of a generic "algo deu errado".
 
-## NestJS (migração em andamento)
+## NestJS
 
-O backend está sendo portado para NestJS (`PLAN.md`, Fase N). Enquanto convivem o Express legado (`api/`) e o Nest:
+O backend é NestJS 12 (`PLAN.md`, Fase N, concluída).
 
-- **Um único mapa Error → HTTP**: `common/http/errorMapping.ts` (`mapError`). O `errorHandler` (Express) e o `AllExceptionsFilter` (Nest) são só adaptadores — um erro tipado novo ganha UM branch em `mapError`, nunca um `res.status(...)` no controller nem um mapa paralelo no filter.
-- **Nest não precisa de `asyncHandler`**: rejeição de handler `async` chega ao filter. Handlers do Express legado continuam exigindo `asyncHandler` até o módulo ser portado.
-- **Guard global fechado por padrão**: `AuthGuard` (`CommonModule`) exige Bearer em todo handler; rota aberta só com `@Public()`. Guard/rate limit lançam erro tipado (`UnauthorizedError`, `RateLimitedError`) — não montam resposta.
-- `@Tenant()` / `@Auth()` substituem `tenantOf(req)` / `authOf(req)`; o `tenantId` vem do token, nunca do body.
-- O filter trata `HttpException` do próprio Nest (rota inexistente → 404 `route_not_found`) e não escreve corpo se `res.headersSent` (SSE).
+- **Um único mapa Error → HTTP**: `common/http/errorMapping.ts` (`mapError`), aplicado pelo `AllExceptionsFilter`. Um erro tipado novo ganha UM branch em `mapError` — nunca um `res.status(...)` no controller nem um mapa paralelo.
+- **Sem `asyncHandler`**: o Nest encaminha a rejeição de qualquer handler `async` ao filter. Não existe mais "handler nu que derruba o processo".
+- **Guard global fechado por padrão**: `AuthGuard` (`CommonModule`) exige Bearer em todo handler; rota aberta só com `@Public()`. Guards e interceptors lançam erro tipado (`UnauthorizedError`, `RateLimitedError`, `MulterError`…) — não montam resposta.
+- `@Tenant()` / `@Auth()` entregam o contexto do token; o `tenantId` vem do token, nunca do body.
+- O filter trata `HttpException` do próprio Nest (rota inexistente → 404 `route_not_found`, JSON inválido → 400 `http_error`) e não escreve corpo se `res.headersSent` (SSE).
+- **Não use `@Header(...)` no handler** para definir `Content-Type` de sucesso: o header vaza para o JSON de erro do filter. Defina com `res.type(...)` (`@Res({ passthrough: true })`) só no caminho de sucesso.
+- POST que não cria recurso responde 200 (`@HttpCode(200)`); o padrão do Nest é 201.
 - Injeção por tipo no construtor NÃO funciona sob `tsx`/Vitest (sem `emitDecoratorMetadata`): use `@Inject(Token)` explícito.

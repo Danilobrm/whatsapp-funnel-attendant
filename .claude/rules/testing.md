@@ -14,7 +14,7 @@ Any change that adds or modifies behaviour MUST come with automated tests. Backe
 | New pure function (guardrails, formatters, mappers) | unit test — cover happy path + every documented rejection code | unit test — same |
 | New service method | unit test with repository mocked (`vi.mock`) — assert branching + typed errors | n/a |
 | New repository query | integration-style test hitting a disposable pg schema OR a mocked `query()` — assert SQL params and return shape | n/a |
-| New controller / route | supertest against `createServer()` — assert status code, JSON shape, error mapping via `errorHandler` | n/a |
+| New controller / route | supertest against `createTestApp(TheModule)` (`src/test/nestApp.ts`: real guard + filter, services mocked with `vi.mock`) — assert status code, JSON shape, 401 without token, error mapping through the filter. Whole-app route matrix lives in `src/app.test.ts` (`createApp()`) | n/a |
 | New React component | n/a | render + assert visible text / role, `userEvent` for interactions |
 | New hook | n/a | `renderHook` — assert state transitions |
 | Bug fix | regression test that FAILS on the buggy commit and PASSES after the fix | same |

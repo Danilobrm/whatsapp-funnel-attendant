@@ -13,9 +13,8 @@ import { SimulatorModule } from "./modules/simulator/simulator.module.js";
 import { StoreModule } from "./modules/store/store.module.js";
 
 /**
- * Raiz do Nest. As rotas ainda vivem no Express legado (`api/server.ts`),
- * montado por `bootstrap.ts`. Cada módulo portado entra aqui em `imports` e
- * sai do `server.ts`.
+ * Raiz do Nest: `CommonModule` (guard global + filter) e um módulo por
+ * contexto de negócio. Cada módulo dono do seu controller.
  */
 @Module({
   imports: [

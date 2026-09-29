@@ -2,7 +2,6 @@ import { NotFoundException } from "@nestjs/common";
 import multer from "multer";
 import { describe, expect, it, vi } from "vitest";
 
-import { errorHandler } from "../../api/middlewares/errorHandler.js";
 import {
   ForbiddenError,
   UnauthorizedError,
@@ -38,12 +37,6 @@ function makeRes(headersSent = false) {
 function runFilter(error: unknown, res = makeRes()) {
   const host = { switchToHttp: () => ({ getResponse: () => res }) };
   new AllExceptionsFilter().catch(error, host as never);
-  return res;
-}
-
-function runLegacy(error: unknown) {
-  const res = makeRes();
-  errorHandler(error, {} as never, res as never, vi.fn());
   return res;
 }
 
@@ -87,16 +80,14 @@ const DOMAIN_ERRORS: [string, unknown, number][] = [
 
 describe("AllExceptionsFilter", () => {
   it.each(DOMAIN_ERRORS)(
-    "%s → same status and body as the legacy errorHandler",
+    "%s → its HTTP status, with the project's body shape",
     (_name, error, status) => {
-      const nest = runFilter(error);
-      const legacy = runLegacy(error);
+      const res = runFilter(error);
 
-      expect(nest.status).toHaveBeenCalledWith(status);
-      expect(nest.status.mock.calls).toEqual(legacy.status.mock.calls);
-      expect(withoutClock(nest.json.mock.calls[0]?.[0])).toEqual(
-        withoutClock(legacy.json.mock.calls[0]?.[0]),
-      );
+      expect(res.status).toHaveBeenCalledWith(status);
+      const body = withoutClock(res.json.mock.calls[0]?.[0]);
+      expect(body).toHaveProperty("status");
+      expect(body).toHaveProperty("code");
     },
   );
 

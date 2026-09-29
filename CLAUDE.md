@@ -12,7 +12,7 @@ This repo was bootstrapped from `faq-chatbot-analytics`. What came over: the mul
 
 Rules in `.claude/rules/` MUST be followed for any change in their scope:
 
-- [`error-handling.md`](.claude/rules/error-handling.md) — every async Express handler wrapped in `asyncHandler`; typed error classes mapped to HTTP status in `errorHandler`; frontend renders per-code UX, never raw messages.
+- [`error-handling.md`](.claude/rules/error-handling.md) — typed error classes mapped to HTTP status in ONE place (`mapError`, used by the Nest `AllExceptionsFilter`); frontend renders per-code UX, never raw messages.
 - [`testing.md`](.claude/rules/testing.md) — every change ships with tests in BOTH `backend/` and `frontend/` (Vitest). No "tests later".
 - [`ui-design-system.md`](.claude/rules/ui-design-system.md) — UI consumes tokens from `frontend/src/styles/theme.css`; no hardcoded colors.
 - [`ui-i18n.md`](.claude/rules/ui-i18n.md) — every user-facing string goes through `frontend/src/i18n/`; every locale in `availableLocales` gets the key.
@@ -20,7 +20,7 @@ Rules in `.claude/rules/` MUST be followed for any change in their scope:
 
 ## Stack & commands
 
-- Node **>= 22**, TypeScript ESM in both packages. Backend: Express 4 + `pg` + LangChain (Ollama | Anthropic | OpenAI | Gemini, chosen by `LLM_PROVIDER`), runs with `tsx`, builds with `tsc`. Frontend: Vite 5 + React 18 + Tailwind v4 + react-router v7.
+- Node **>= 22**, TypeScript ESM in both packages. Backend: NestJS 12 (on `@nestjs/platform-express`) + `pg` + LangChain (Ollama | Anthropic | OpenAI | Gemini, chosen by `LLM_PROVIDER`), runs with `tsx`, builds with `tsc`. Frontend: Vite 5 + React 18 + Tailwind v4 + react-router v7.
 - Postgres 16 and Ollama run in Docker; API and Vite run on the host in dev.
 
 ```bash
@@ -48,15 +48,21 @@ Do NOT ship without `npm run lint` and `npm test` in every package you touched.
 
 ```
 src/
-├── index.ts                 # boot: assertProductionSecrets → migrations → listen
+├── index.ts                 # boot: assertProductionSecrets → migrations → createApp() → listen
+├── bootstrap.ts             # createApp(): NestFactory (rawBody), CORS, static /produtos
+├── app.module.ts            # root: CommonModule + one module per context
+├── common/                  # cross-cutting Nest pieces
+│   ├── common.module.ts     # registers the GLOBAL AuthGuard + AllExceptionsFilter
+│   ├── decorators/          # @Public(), @Auth(), @Tenant(), @RateLimit()
+│   ├── guards/              # AuthGuard (closed by default), RateLimitGuard
+│   ├── filters/             # AllExceptionsFilter (adapter over mapError)
+│   ├── http/errorMapping.ts # mapError: the ONLY Error→HTTP map (pure)
+│   └── rate-limit/          # SlidingWindowLimiter (in-memory)
+├── test/nestApp.ts          # createTestApp(...modules) + bearer() for controller tests
 ├── config/                  # env.ts (+ assertProductionSecrets), db.ts (query helper), migrate.ts, tenantQuery.ts, transaction.ts (withTransaction + clientTenantQuery)
 ├── lib/fetchWithTimeout.ts  # EVERY outbound HTTP on a reply path uses this
-├── types/express.d.ts       # req.auth (optional), req.rawBody (webhooks only)
+├── types/express.d.ts       # req.auth (set by AuthGuard), req.rawBody (Nest `rawBody: true`)
 ├── scripts/seed.ts
-├── api/
-│   ├── server.ts            # mounts + guards (guard lives on the MOUNT)
-│   ├── utils/               # asyncHandler, authContext (tenantOf/authOf — the only req.auth readers)
-│   └── middlewares/         # errorHandler (single Error→HTTP mapper), auth/requireAuth, rateLimit, upload
 └── modules/                 # each module owns its role folders (below)
     ├── tenants/             # TenantId brand, resolve by WhatsApp phone_number_id (cached, positive-only)
     ├── auth/                # jwt (HS256 allowlist), bcrypt, no user enumeration
@@ -78,22 +84,27 @@ src/
 ```
 
 **Module layout** — every module groups files by role, tests colocated next to the file they test:
-`controllers/` (req/res only) · `routes/` (Router only) · `services/` · `repositories/` (SQL, `tenantId` first) · `types/` · `errors/` · `clients/` (outbound HTTP/SDK) · `utils/` (pure helpers) · `events/` · `storage/`. Only folders a module needs exist. `agent/tools/` and `modules/errors/` (shared typed errors) stay as they are. Never mix a service and a repository in the same folder; cross-module imports go by explicit file path (`../../order/services/order.service.js`), no barrels. Paths named elsewhere in this file (e.g. `order.service.ts`) live in these subfolders.
+`<mod>.module.ts` (Nest module) · `controllers/` (Nest controllers, HTTP translation only) · `guards/` / `interceptors/` (module-specific) · `services/` · `repositories/` (SQL, `tenantId` first) · `types/` · `errors/` · `clients/` (outbound HTTP/SDK) · `utils/` (pure helpers) · `events/` · `storage/`. Only folders a module needs exist. `agent/tools/` and `modules/errors/` (shared typed errors) stay as they are. Services stay plain functions (`tenantId` first, `vi.mock` in tests); Nest wraps controllers/guards/filters, not the business logic. Never mix a service and a repository in the same folder; cross-module imports go by explicit file path (`../../order/services/order.service.js`), no barrels. Paths named elsewhere in this file (e.g. `order.service.ts`) live in these subfolders.
 
-Routes:
+Routes (each is a Nest controller in its module; **every handler requires a Bearer token unless marked `@Public()`** — the global `AuthGuard` is closed by default):
 
-```ts
-app.use("/health", healthRoutes);                          // public (compose healthcheck)
-app.use("/api/auth", authRoutes);                          // POST /login open; GET /me guarded
-app.use("/webhooks/whatsapp", whatsappRoutes);             // public, authenticated by HMAC signature
-app.use("/api/public", createPublicRoutes());              // cardápio em link: GET /menu/:code, POST /cart/:code — public, authenticated by the short URL code, per-IP rate limit
-app.use("/api/settings", requireAuth, settingsRoutes);
-app.use("/api/simulator", requireAuth, simulatorRoutes);   // GET/DELETE /conversation, POST /messages (+ debug), GET /cart, GET/POST /customers; all take ?contactId= / body contactId (phone of a test customer; absent = the admin's own)
-app.use("/api/menu", requireAuth, menuRoutes);             // categories, items (+ sizes/option groups nested), reorder, availability
-app.use("/api/store", requireAuth, storeRoutes);           // settings + /zones CRUD + /geo (city/outlines) + /geo/cities?q= + /geo/geocode?q=
-app.use("/api/orders", requireAuth, createOrderRoutes());  // GET / (board), GET /stream (SSE), GET /:id, POST /:id/transition, POST /dev-sample (non-production only)
-app.use("/api/dashboard", requireAuth, dashboardRoutes);   // GET / → { dashboard }
 ```
+GET  /health                       @Public  (compose healthcheck)              health
+POST /api/auth/login               @Public, 200                                 auth
+GET  /api/auth/me                  guarded                                      auth
+*    /webhooks/whatsapp            @Public, authenticated by HMAC signature     whatsapp (WebhookSignatureGuard on POST)
+GET  /api/public/menu/:code        @Public, per-IP rate limit 60/min            menulink (cardápio em link)
+POST /api/public/cart/:code        @Public, per-IP rate limit 20/min, 200       menulink
+*    /api/settings                 GET/PUT                                      settings
+*    /api/simulator/*              GET/DELETE /conversation, POST /messages (+ debug), GET /cart, GET/POST /customers; all take ?contactId= / body contactId (phone of a test customer; absent = the admin's own)
+*    /api/menu/*                   categories, items (+ sizes/option groups nested), reorder, availability, POST /images (upload) menu
+*    /api/store/*                  settings + /zones CRUD + /geo (city/outlines) + /geo/cities?q= + /geo/geocode?q=   store
+*    /api/orders/*                 GET / (board), GET /stream (SSE, manual @Res), GET /:id, POST /:id/transition (200), POST /dev-sample (404 in production)   order
+GET  /api/dashboard                → { dashboard }                              dashboard
+GET  /produtos/*                   static product photos (public, `useStaticAssets` in bootstrap)
+```
+
+POST handlers that do not create an API resource answer **200**, not Nest's default 201 (`@HttpCode(200)`): login, simulator messages, order transition, public cart, webhook.
 
 ### Multi-tenancy — `tenantId` is ALWAYS the first repository argument
 
@@ -162,14 +173,14 @@ The customer cannot see what they pick in chat, so the agent sends a link to a w
 - **`GET /api/public/menu/:code`** → `{ restaurant { name, logoUrl, open, paused, nextOpening (ISO), timezone, minOrderCents }, menu, cart { items }, whatsappUrl }` (+ `opened` event). `toPublicMenu` builds the public shape field by field (active only, sold-out kept and flagged; no `position`/`active`/`categoryId`). Reopening the link resumes the saved cart.
 - **`POST /api/public/cart/:code`** `{ items: [{ itemId, sizeId, optionIds, quantity, notes }] }`: `parseCartItems` (shape only, strict types, ≤ 50 lines) → `priceCart` on the whole candidate cart → only LINE problems (`lineIndex !== null`) block (`InvalidPublicCartError` 422 `cart_invalid` + `problems[{code,lineIndex}]`, `cart_empty`); delivery/payment/minimum are NOT required here, the chat collects them (the minimum is checked at `request_confirmation`). Then `saveEditedCart` (keeps fulfillment/payment already collected), `confirmed` event, and `sendOutbound` with `formatCartReceived` ("Recebi seu carrinho…" + the next question by cart state). A failed notice is logged and does NOT undo the saved cart (`notified: false` → the page tells the customer to send a message). The browser is never a price source.
 - **`whatsappUrl`**: `https://wa.me/<store_settings.whatsapp_number>?text=<RETURN_TEXT>`, only for `whatsapp` conversations with a valid number; `null` on the simulator. `whatsapp_number` = the restaurant's service number (digits, DDI, validated 10–15 in `parseStoreSettings`, `whatsapp_number_invalid`), separate from `owner_whatsapp` (the owner's personal number for location messages).
-- **Rate limit** (`api/middlewares/rateLimit.ts`): in-memory sliding window per IP (GET 60/min, POST 20/min) → `RateLimitedError` 429. Single instance only, like the order bus; several instances → Redis behind the same signature.
+- **Rate limit** (`@RateLimit({ windowMs, max })` + `RateLimitGuard` over `SlidingWindowLimiter`): in-memory sliding window per IP, one bucket per handler (GET 60/min, POST 20/min) → `RateLimitedError` 429, before the handler touches the DB. Single instance only, like the order bus; several instances → Redis behind the same signature.
 - **Errors**: `UnauthorizedError` codes `invalid_menu_link`/`expired_menu_link` (401, code only), `InvalidPublicCartError` 422, `RateLimitedError` 429 — all mapped in `errorHandler`.
 - **Funnel** (`menu_link_events`: `sent → opened → confirmed → ordered`): counted by DISTINCT conversation, last 7 days, in `GET /api/dashboard` as `menuFunnel`. `ordered` is written by `place_order` only if the conversation already has a `confirmed` (`insertMenuLinkOrdered`), so chat-typed orders don't count. Funnel writes are best-effort where they must not block (order creation).
 
 ### WhatsApp (`modules/whatsapp/`)
 
 - `GET /webhooks/whatsapp` — Meta handshake: `hub.mode=subscribe` + `hub.verify_token === WHATSAPP_VERIFY_TOKEN` → echo `hub.challenge`; otherwise `ForbiddenError("invalid_verify_token")` → 403.
-- `POST /webhooks/whatsapp` — `isValidSignature(req.rawBody, X-Hub-Signature-256, WHATSAPP_APP_SECRET)` **fails closed** (no secret → reject). `rawBody` is captured in `express.json({ verify })` only for `/webhooks/*`; `JSON.stringify(req.body)` does NOT reproduce the signed bytes.
+- `POST /webhooks/whatsapp` — `isValidSignature(req.rawBody, X-Hub-Signature-256, WHATSAPP_APP_SECRET)` **fails closed** (no secret → reject). The check is `WebhookSignatureGuard` reading `req.rawBody` (Nest `rawBody: true`); `JSON.stringify(req.body)` does NOT reproduce the signed bytes.
 - Responds 200 **before** processing (Meta retries slow webhooks; the LLM takes seconds). Dedup by `external_id` covers the retries that slip through. This assumes a long-running Node server; on serverless, put a queue here.
 - `processWebhook` handles messages sequentially (order per customer) and isolates failures per message.
 - Tenant routing: `metadata.phone_number_id` → `tenants.whatsapp_phone_number_id`.
@@ -184,7 +195,7 @@ The customer cannot see what they pick in chat, so the agent sends a link to a w
 
 ### Errors
 
-- `errorHandler` maps: `UnauthorizedError` 401, `ForbiddenError` 403, `TenantNotFoundError`/`OrderNotFoundError` 404, `InvalidTransitionError` 409, `InvalidSettingsError`/`InvalidInputError`/`InvalidMenuError`/`InvalidOrderError` 422, `GeoUnavailableError` 502, anything else 500 with a fixed safe message (never `error.message` — it leaks host/port/columns, and this handler serves anonymous callers).
+- `mapError` (`common/http/errorMapping.ts`, applied by `AllExceptionsFilter`) maps: `UnauthorizedError` 401, `ForbiddenError` 403, `TenantNotFoundError`/`OrderNotFoundError` 404, `InvalidTransitionError` 409, `InvalidSettingsError`/`InvalidInputError`/`InvalidMenuError`/`InvalidOrderError` 422, `GeoUnavailableError` 502, `multer` size errors 422 `image_too_large`, Nest's own `HttpException` keeps its status (unknown route → 404 `route_not_found`, malformed JSON → 400 `http_error`), anything else 500 with a fixed safe message (never `error.message` — it leaks host/port/columns, and this filter serves anonymous callers). With headers already sent (SSE) the filter only ends the response.
 - Auth/forbidden/not-found branches return `code` only, no message.
 
 ### Database

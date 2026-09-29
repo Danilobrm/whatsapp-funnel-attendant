@@ -11,7 +11,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
  * função muda: a assinatura (`buffer` entra, `{ url }` sai) e o contrato com
  * quem chama (`menu.service`, o controller) ficam os mesmos.
  */
-const STORAGE_DIR = resolve(__dirname, "../../../produtos");
+const STORAGE_DIR = resolve(__dirname, "../../../../produtos");
 const PUBLIC_PATH_PREFIX = "/produtos";
 
 const EXTENSION_BY_MIME_TYPE: Record<string, string> = {
