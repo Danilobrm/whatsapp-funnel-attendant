@@ -292,21 +292,24 @@ Tudo em `src/common/` (+ `modules/auth/utils/bearer.ts`, `modules/whatsapp/guard
 - [x] Regra `error-handling.md` ganhou a seção NestJS. `asyncHandler` só sai na Etapa 3 (o legado ainda usa).
 - [x] Mutação verificada: com `rawBody: false` e com o bypass de `@Public()` quebrado, os testes falham.
 
-### Etapa 2 — Portar módulo a módulo
+### Etapa 2 — Portar módulo a módulo (feito)
 
-Ordem (do mais simples ao mais arriscado): `health` → `auth` → `settings` → `dashboard` → `store` → `menu` (upload `POST /api/menu/images` via `FileInterceptor`) → `simulator` → `order` (SSE) → `menulink` (público + rate limit) → `whatsapp` (webhook).
+Ordem seguida: `health` → `auth` → `settings` → `dashboard` → `store` → `menu` → `simulator` → `order` → `menulink` → `whatsapp`. Um commit por módulo.
 
-Por módulo:
-- [ ] `<mod>.module.ts` + controller com decorators (`@Controller`, `@Get`…); a lógica continua chamando as funções de `services/`.
-- [ ] Os testes atuais do controller são o **contrato**: portar para `Test.createTestingModule` + supertest e exigir status/JSON idênticos. Nenhum teste apagado sem equivalente.
-- [ ] Apagar `routes/<mod>Routes.ts` e o mount em `api/server.ts` do módulo.
+Por módulo: `<mod>.module.ts` + `controllers/<mod>.controller.ts` (a lógica segue nas funções de `services/`), testes de controller reescritos para HTTP real (`test/nestApp.ts` + supertest, services mockados), `routes/` e o mount em `api/server.ts` apagados. `api/server.test.ts` passou a rodar sobre `createApp()` e foi o contrato durante toda a migração.
 
-Pontos de atenção:
-- **SSE (`order`)**: manter `@Res()` com escrita manual, `event:`/`: ping` a cada 25 s, cleanup no `close`. `@Sse()` do Nest muda o formato — não usar sem provar equivalência.
-- **`whatsapp`**: responde 200 **antes** de processar; dedup por `external_id` intacto; `processWebhook` sequencial.
-- **`menulink`**: 401 `invalid_menu_link`/`expired_menu_link` só com `code`; `RateLimitGuard` antes de tocar o banco.
-- **Multi-tenant**: `tenantId` continua vindo de `@Tenant()` (branded `TenantId`), nunca do body. Teste de isolamento ponta a ponta por módulo portado.
-- Ordem de rotas (`/stream` antes de `/:id`) e `dev-sample` inexistente em produção (404, não 403).
+Achados que os testes de contrato pegaram / decisões:
+- **POST responde 200, não 201**, onde o legado usava `res.json` (`login`, `simulator/messages`, `orders/:id/transition`, `public/cart/:code`, webhook): `@HttpCode(200)` explícito.
+- **Upload**: `ProductImageUploadInterceptor` sobre o multer. O `FileInterceptor` do Nest reescreve `LIMIT_FILE_SIZE` em 413; o contrato é 422 `image_too_large`. O guard global roda antes: sem login o corpo nem é lido.
+- **SSE** (`order`): `@Res()` manual, mesmo formato de fio; testado com conexão real (headers, isolamento por tenant, ping, cleanup no `close`). Mutação confirmada: sem `unsubscribe()` e com tenant errado os testes falham.
+- **`dev-sample`**: 404 em produção decidido na requisição (não ao montar a rota).
+- **Webhook**: `@Header("Content-Type", "text/plain")` vazava para o JSON de erro do filter (403 saía como `text/plain`) — pego pelo teste de contrato; o tipo agora é definido só no sucesso.
+- Mudanças de comportamento aceitas: rota inexistente e JSON malformado passam a responder JSON do projeto (`route_not_found` 404 / `http_error` 400) em vez de HTML do Express / 500.
+- `menulink` público: `@Public()` + `RateLimitGuard`, balde separado para GET (60/min) e POST (20/min), 429 antes de tocar o serviço.
+
+Smoke real contra o Postgres (build compilado): `/health`, login, `me`, `settings`, `dashboard`, `orders`, `menu`, `store`, `simulator/customers` → 200; `/api/orders` sem token → 401; rota desconhecida → 404 JSON; SSE abre com `: connected`.
+
+Sobrou no legado (`api/server.ts`): CORS, `express.json` com `verify`, `express.static('/produtos')` e o `errorHandler`. Tudo vai embora na Etapa 3.
 
 ### Etapa 3 — Limpeza
 
