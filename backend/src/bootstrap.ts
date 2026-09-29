@@ -6,6 +6,7 @@ import { createServer } from "./api/server.js";
 
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import type { Type } from "@nestjs/common";
+import type { RequestListener } from "node:http";
 
 /**
  * Sobe o Nest com o Express legado montado ANTES das rotas do Nest.
@@ -17,16 +18,17 @@ import type { Type } from "@nestjs/common";
  * body-parser do Nest o ignora — e o `rawBody` do webhook segue vindo do
  * `verify` do legado até o módulo `whatsapp` ser portado.
  *
- * `root` existe para o teste registrar um módulo próprio; produção usa o
- * `AppModule`.
+ * `root` e `legacy` existem para o teste registrar um módulo e um legado
+ * próprios; produção usa o `AppModule` e o `createServer()`.
  */
 export async function createApp(
   root: Type<unknown> = AppModule,
+  legacy: RequestListener = createServer(),
 ): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(root, {
     logger: ["error", "warn"],
     rawBody: true,
   });
-  app.use(createServer());
+  app.use(legacy);
   return app;
 }

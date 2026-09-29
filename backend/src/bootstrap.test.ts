@@ -1,41 +1,18 @@
-import { createHmac } from "node:crypto";
-
 import { Body, Controller, Get, Module, Post } from "@nestjs/common";
+import express from "express";
 import request from "supertest";
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("./config/db.js", () => ({
   query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
   pool: { connect: vi.fn(), end: vi.fn() },
 }));
 
-vi.mock("./modules/ai/clients/llm-client.js", () => ({
-  createChatLlm: vi.fn(),
-}));
-
-vi.mock("./modules/whatsapp/services/whatsapp.service.js", () => ({
-  processWebhook: vi.fn(async () => {}),
-}));
-
-const APP_SECRET = "test-app-secret";
-vi.stubEnv("WHATSAPP_APP_SECRET", APP_SECRET);
-vi.stubEnv("WHATSAPP_VERIFY_TOKEN", "test-verify-token");
-
 const { createApp } = await import("./bootstrap.js");
 const { CommonModule } = await import("./common/common.module.js");
 const { Public, Tenant } =
   await import("./common/decorators/auth.decorators.js");
 const { signAuthToken } = await import("./modules/auth/utils/jwt.js");
-const { processWebhook } =
-  await import("./modules/whatsapp/services/whatsapp.service.js");
 
 @Controller("nest-probe")
 class ProbeController {
@@ -60,11 +37,24 @@ class ProbeController {
 @Module({ imports: [CommonModule], controllers: [ProbeController] })
 class ProbeModule {}
 
+/** Legado mínimo: lê o corpo (como o `express.json` do `server.ts`) e tem uma rota. */
+function fakeLegacy() {
+  const legacy = express();
+  legacy.use(express.json());
+  legacy.get("/legacy-probe", (_req, res) => {
+    res.json({ from: "legacy" });
+  });
+  legacy.post("/legacy-probe/echo", (req, res) => {
+    res.json({ received: req.body });
+  });
+  return legacy;
+}
+
 describe("ponte Nest + Express legado", () => {
   let app: Awaited<ReturnType<typeof createApp>>;
 
   beforeAll(async () => {
-    app = await createApp(ProbeModule);
+    app = await createApp(ProbeModule, fakeLegacy());
     await app.init();
   });
 
@@ -72,24 +62,13 @@ describe("ponte Nest + Express legado", () => {
     await app.close();
   });
 
-  beforeEach(() => {
-    vi.mocked(processWebhook).mockClear();
-  });
-
   const http = () => app.getHttpServer();
 
-  it("rota do legado continua respondendo (GET /health)", async () => {
-    const res = await request(http()).get("/health");
+  it("rota do legado é servida pelo legado", async () => {
+    const res = await request(http()).get("/legacy-probe");
 
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe("ok");
-  });
-
-  it("rota guardada do legado continua exigindo token (401)", async () => {
-    const res = await request(http()).get("/api/orders");
-
-    expect(res.status).toBe(401);
-    expect(res.body.code).toBe("missing_token");
+    expect(res.body).toEqual({ from: "legacy" });
   });
 
   it("rota do Nest é servida quando o legado não a conhece", async () => {
@@ -104,6 +83,12 @@ describe("ponte Nest + Express legado", () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toEqual({ received: { a: 1 } });
+  });
+
+  it("o legado continua lendo o corpo das suas próprias rotas", async () => {
+    const res = await request(http()).post("/legacy-probe/echo").send({ b: 2 });
+
+    expect(res.body).toEqual({ received: { b: 2 } });
   });
 
   it("rota do Nest sem @Public() passa pelo guard global (401 sem token, 200 com)", async () => {
@@ -122,36 +107,5 @@ describe("ponte Nest + Express legado", () => {
 
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("route_not_found");
-  });
-
-  it("webhook assinado passa pela ponte com o rawBody do legado", async () => {
-    const body = '{"object":"whatsapp_business_account",  "entry":[]}';
-    const signature =
-      "sha256=" + createHmac("sha256", APP_SECRET).update(body).digest("hex");
-
-    const res = await request(http())
-      .post("/webhooks/whatsapp")
-      .set("Content-Type", "application/json")
-      .set("X-Hub-Signature-256", signature)
-      .send(body);
-
-    expect(res.status).toBe(200);
-    await vi.waitFor(() =>
-      expect(processWebhook).toHaveBeenCalledWith({
-        object: "whatsapp_business_account",
-        entry: [],
-      }),
-    );
-  });
-
-  it("webhook com assinatura errada é recusado (403)", async () => {
-    const res = await request(http())
-      .post("/webhooks/whatsapp")
-      .set("Content-Type", "application/json")
-      .set("X-Hub-Signature-256", "sha256=deadbeef")
-      .send('{"entry":[]}');
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe("invalid_signature");
   });
 });

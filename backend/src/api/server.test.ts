@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 
 import request from "supertest";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Prova a matriz de guardas do mount. Chamar o handler direto (o padrão dos
@@ -29,9 +29,17 @@ vi.stubEnv("WHATSAPP_VERIFY_TOKEN", VERIFY_TOKEN);
 const { signAuthToken } = await import("../modules/auth/utils/jwt.js");
 const { processWebhook } =
   await import("../modules/whatsapp/services/whatsapp.service.js");
-const { createServer } = await import("./server.js");
+const { createApp } = await import("../bootstrap.js");
 
-const app = createServer();
+// Contrato HTTP de ponta a ponta: passa pelo app COMPLETO (Nest + Express
+// legado), então continua valendo enquanto os módulos migram de um para o outro.
+const nest = await createApp();
+await nest.init();
+const app = nest.getHttpServer();
+
+afterAll(async () => {
+  await nest.close();
+});
 const TOKEN = signAuthToken({ userId: 1, tenantId: 1 });
 
 beforeEach(() => {
@@ -201,11 +209,13 @@ describe("pedidos", () => {
     const original = env.nodeEnv;
     env.nodeEnv = "production";
     try {
-      const prodApp = createServer();
-      const res = await request(prodApp)
+      const prodNest = await createApp();
+      await prodNest.init();
+      const res = await request(prodNest.getHttpServer())
         .post("/api/orders/dev-sample")
         .set("Authorization", `Bearer ${TOKEN}`);
       expect(res.status).toBe(404);
+      await prodNest.close();
     } finally {
       env.nodeEnv = original;
     }
