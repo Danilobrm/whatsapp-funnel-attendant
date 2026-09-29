@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../geo/clients/google.client.js", () => ({ reverseGeocodeGoogle: vi.fn() }));
+vi.mock("../../geo/clients/google.client.js", () => ({
+  reverseGeocodeGoogle: vi.fn(),
+}));
 vi.mock("./store.service.js", () => ({
   getStoreSettings: vi.fn(),
   updateStoreSettings: vi.fn(),

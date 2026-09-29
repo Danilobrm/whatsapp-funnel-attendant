@@ -7,7 +7,6 @@ import { menuRoutes } from "../modules/menu/routes/menuRoutes.js";
 import { createPublicRoutes } from "../modules/menulink/routes/publicRoutes.js";
 import { createOrderRoutes } from "../modules/order/routes/orderRoutes.js";
 import { simulatorRoutes } from "../modules/simulator/routes/simulatorRoutes.js";
-import { storeRoutes } from "../modules/store/routes/storeRoutes.js";
 import { whatsappRoutes } from "../modules/whatsapp/routes/whatsappRoutes.js";
 import { requireAuth } from "./middlewares/auth/requireAuth.js";
 import { errorHandler } from "./middlewares/errorHandler.js";
@@ -47,7 +46,6 @@ export function createServer(): Express {
   // existe lugar onde omitir.
   app.use("/api/simulator", requireAuth, simulatorRoutes);
   app.use("/api/menu", requireAuth, menuRoutes);
-  app.use("/api/store", requireAuth, storeRoutes);
   app.use("/api/orders", requireAuth, createOrderRoutes());
 
   app.use(errorHandler);

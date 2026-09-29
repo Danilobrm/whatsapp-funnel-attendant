@@ -5,6 +5,7 @@ import { AuthModule } from "./modules/auth/auth.module.js";
 import { DashboardModule } from "./modules/dashboard/dashboard.module.js";
 import { HealthModule } from "./modules/health/health.module.js";
 import { SettingsModule } from "./modules/settings/settings.module.js";
+import { StoreModule } from "./modules/store/store.module.js";
 
 /**
  * Raiz do Nest. As rotas ainda vivem no Express legado (`api/server.ts`),
@@ -18,6 +19,7 @@ import { SettingsModule } from "./modules/settings/settings.module.js";
     AuthModule,
     SettingsModule,
     DashboardModule,
+    StoreModule,
   ],
 })
 export class AppModule {}
