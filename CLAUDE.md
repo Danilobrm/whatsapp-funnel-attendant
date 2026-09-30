@@ -20,7 +20,7 @@ Rules in `.claude/rules/` MUST be followed for any change in their scope:
 
 ## Stack & commands
 
-- Node **>= 22**, TypeScript ESM in both packages. Backend: NestJS 12 (on `@nestjs/platform-express`) + `pg` + LangChain (Ollama | Anthropic | OpenAI | Gemini, chosen by `LLM_PROVIDER`), runs with `tsx`, builds with `tsc`. Frontend: Vite 5 + React 18 + Tailwind v4 + react-router v7.
+- Node **>= 22**, TypeScript ESM in both packages. Backend: NestJS 12 (on `@nestjs/platform-express`) + `pg` + LangChain (Ollama | Anthropic | OpenAI | Gemini, chosen by `LLM_PROVIDER`), builds with `tsc`; dev/seed run with `node --import @swc-node/register/esm-register` (SWC emits the decorator metadata Nest needs for constructor injection by type; `tsx`/esbuild do not) and Vitest uses `unplugin-swc` for the same reason. Frontend: Vite 5 + React 18 + Tailwind v4 + react-router v7.
 - Postgres 16 and Ollama run in Docker; API and Vite run on the host in dev.
 
 ```bash
@@ -58,8 +58,9 @@ src/
 │   ├── filters/             # AllExceptionsFilter (adapter over mapError)
 │   ├── http/errorMapping.ts # mapError: the ONLY Error→HTTP map (pure)
 │   └── rate-limit/          # SlidingWindowLimiter (in-memory)
-├── test/nestApp.ts          # createTestApp(...modules) + bearer() for controller tests
-├── config/                  # env.ts (+ assertProductionSecrets), db.ts (query helper), migrate.ts, tenantQuery.ts, transaction.ts (withTransaction + clientTenantQuery)
+├── common/database/         # DatabaseModule (@Global): Database (pg pool, injected via PG_POOL), TenantDb + TenantTx (the tenant backstop), MigrationsService (init.sql in onModuleInit), assertTenantScoped
+├── test/                    # nestApp.ts (createControllerTestApp({ controllers, providers }) + bearer()), bind.ts (bound()), fakeDb.ts (real TenantDb over a fake pool)
+├── config/                  # env.ts (+ assertProductionSecrets)
 ├── lib/fetchWithTimeout.ts  # EVERY outbound HTTP on a reply path uses this
 ├── types/express.d.ts       # req.auth (set by AuthGuard), req.rawBody (Nest `rawBody: true`)
 ├── scripts/seed.ts
@@ -84,7 +85,14 @@ src/
 ```
 
 **Module layout** — every module groups files by role, tests colocated next to the file they test:
-`<mod>.module.ts` (Nest module) · `controllers/` (Nest controllers, HTTP translation only) · `guards/` / `interceptors/` (module-specific) · `services/` · `repositories/` (SQL, `tenantId` first) · `types/` · `errors/` · `clients/` (outbound HTTP/SDK) · `utils/` (pure helpers) · `events/` · `storage/`. Only folders a module needs exist. `agent/tools/` and `modules/errors/` (shared typed errors) stay as they are. Services stay plain functions (`tenantId` first, `vi.mock` in tests); Nest wraps controllers/guards/filters, not the business logic. Never mix a service and a repository in the same folder; cross-module imports go by explicit file path (`../../order/services/order.service.js`), no barrels. Paths named elsewhere in this file (e.g. `order.service.ts`) live in these subfolders.
+`<mod>.module.ts` (Nest module) · `controllers/` (Nest controllers, HTTP translation only) · `guards/` / `interceptors/` (module-specific) · `services/` · `repositories/` (SQL, `tenantId` first) · `types/` · `errors/` · `clients/` (outbound HTTP/SDK) · `utils/` (pure helpers) · `events/` · `storage/`. Only folders a module needs exist. `agent/tools/` and `modules/errors/` (shared typed errors) stay as they are. 
+
+**Dependency injection (full Nest pattern).** Every collaborator that has dependencies or does I/O is an `@Injectable()` class injected by constructor TYPE: services, repositories, clients (WhatsApp, Google, OSM, LLM factory), `OrderEvents`, `ProductImageStorage`, `AgentToolExecutor`. Methods keep the old function names and `tenantId`-first signatures (`orderService.createOrder(tenantId, input)`). In-memory caches (settings, store, tenant, published menu) and the SSE event bus are INSTANCE fields. What stays a plain function: pure code with no dependencies (`pricing`, `order.status`, `store.hours`, `parse*`, `summary`, `jwt`, `guardrails`, …) — in `utils/`.
+- New injectable? `@Injectable()`, typed constructor params, add it to its module's `providers` (and `exports` if another module needs it). Cross-module use = the other module in `imports` + inject the class. No `forwardRef`: the graph has no cycles. `ConversationModule` (repository + `OutboundMessenger`) is deliberately separate from `InboundModule` (`ConversationService`, the entry point) so `Order`, `MenuLink` and `Agent` can send messages without depending on the module that depends on the agent.
+- `DatabaseModule` is `@Global`. Repositories of tenant data inject `TenantDb`; the few without a tenant (login, tenant lookup, menu-link-by-code, health) inject `Database`.
+- Grafo: `Tenants ← Auth`; `Menu`, `Geo ← Store`; `Conversation(+WhatsAppClient) ← Order ← MenuLink ← Agent ← Inbound ← Simulator/WhatsApp`; `Dashboard → MenuLink, Store`.
+- Errors that used to live inside a service file (`InvalidSettingsError`, `TenantNotFoundError`) live in `errors/`; `mapError` imports them from there.
+- Never mix a service and a repository in the same folder; cross-module imports go by explicit file path (`../../order/services/order.service.js`), no barrels. Paths named elsewhere in this file (e.g. `order.service.ts`) live in these subfolders, and a "function" named there is now a method of the class (`sendOutbound` → `OutboundMessenger.sendOutbound`, `handleInboundMessage` → `ConversationService.handleInboundMessage`).
 
 Routes (each is a Nest controller in its module; **every handler requires a Bearer token unless marked `@Public()`** — the global `AuthGuard` is closed by default):
 
@@ -112,10 +120,10 @@ POST handlers that do not create an API resource answer **200**, not Nest's defa
 - `TenantId` is a **branded** number, minted only via `asTenantId()` at trust boundaries (JWT verification, WhatsApp phone_number_id resolution, seed). Argument transposition becomes a compile error.
 - Tables with `tenant_id`: `tenants`, `users`, `bot_settings`, `conversations`, `messages`, `menu_categories`, `menu_items`, `item_sizes`, `option_groups`, `options`, `store_settings`, `delivery_zones`, `store_geo`, `orders`, `order_items`, `order_counters`, `customers`, `carts`, `menu_link_events`. Every FK to `tenants` is `ON DELETE CASCADE` (`orders.conversation_id` is `ON DELETE SET NULL`: resetting the simulator never deletes an order).
 - `insertMessage` guards `conversationId` with `EXISTS (... AND tenant_id = $1)` so a foreign id is a no-op.
-- **`config/tenantQuery.ts` is the runtime backstop, not just a convention.** Every tenant-scoped repository call goes through `tenantQuery(tenantId, sql, params)` (outside a transaction) or `assertTenantScoped(tenantId, sql, params)` right before `client.query(...)` (inside `withTransaction` via `clientTenantQuery`, both in `config/transaction.ts`). Both throw before the query runs if the SQL text doesn't mention `tenant_id`, or if the first bound parameter isn't that exact `tenantId` — the two shapes a copy-paste bug takes. It does NOT verify the filter is semantically correct (right column, right place in the WHERE) — that is still the job of the isolation tests below.
-- Unit tests mock `query`; they prove the filter was typed, not that it isolates. Verify isolation end to end.
+- **`common/database/` (`TenantDb`) is the runtime backstop, not just a convention.** Every tenant-scoped repository call goes through `TenantDb.query(tenantId, sql, params)` (outside a transaction) or `tx.query(tenantId, sql, params)` (inside `TenantDb.withTransaction`, the `TenantTx`); both call `assertTenantScoped` first. `TenantDb.query` is `async`, so a violation is a rejection. Both throw before the query runs if the SQL text doesn't mention `tenant_id`, or if the first bound parameter isn't that exact `tenantId` — the two shapes a copy-paste bug takes. It does NOT verify the filter is semantically correct (right column, right place in the WHERE) — that is still the job of the isolation tests below.
+- Repository unit tests run the REAL `TenantDb` over a fake pool (`test/fakeDb.ts`): they prove the filter was typed and the backstop passes, not that it isolates. Verify isolation end to end.
 
-### Conversation flow (`modules/conversation/conversation.service.ts`)
+### Conversation flow (`modules/conversation/services/conversation.service.ts`)
 
 WhatsApp webhook and the panel simulator call the SAME `handleInboundMessage(tenantId, input)`. Never add a second path — the simulator must show exactly what the customer gets.
 
@@ -200,7 +208,7 @@ The customer cannot see what they pick in chat, so the agent sends a link to a w
 
 ### Database
 
-`backend/db/init.sql` runs on the first Postgres start AND on every backend boot (`runMigrations`). Everything must be idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `DO $$ … EXCEPTION WHEN duplicate_object $$`). Destructive changes need a reset: `docker compose down && docker volume rm attendant_postgres_data && docker compose up -d`, then `npm run seed`.
+`backend/db/init.sql` runs on the first Postgres start AND on every backend boot (`MigrationsService`, in `onModuleInit`, so before `listen`; a failure aborts the boot). Everything must be idempotent (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`, `DO $$ … EXCEPTION WHEN duplicate_object $$`). Destructive changes need a reset: `docker compose down && docker volume rm attendant_postgres_data && docker compose up -d`, then `npm run seed`.
 
 ### Menu (`modules/menu/`)
 

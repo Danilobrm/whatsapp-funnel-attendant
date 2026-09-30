@@ -632,12 +632,21 @@ DashboardModule → MenuLink, Store              WhatsAppModule (controller + se
 AppModule imports todos
 ```
 
-### Etapas
+### Etapas (todas feitas)
 
-- [ ] **A — Infra (verde, um commit):** SWC no Vitest e nos scripts `dev`/`seed`; `Database`/`TenantDb`/`TenantTx` + `DatabaseModule` convivendo com o `config/db.ts` atual (mesmo pool).
-- [ ] **B — Varredura (um commit):** converter tudo na ordem folha → topo, testando cada arquivo isolado enquanto o `tsc` global fica vermelho até fechar — não dá para ter commit verde no meio porque quem chama uma função vira classe junto: `tenants, auth, health, settings, customer → menu → geo → store → conversation/outbound + client → order → menulink → agent → inbound → simulator, dashboard, whatsapp`. Junto: controllers injetam services; um `*.module.ts` por contexto; `AppModule` importa todos; `createApp` recebe `configureApp` compartilhado com o teste de app inteiro; `seed.ts` usa `NestFactory.createApplicationContext`; erros que moram em `*.service.ts` (`InvalidSettingsError`, `TenantNotFoundError`) vão para `errors/`; `config/db.ts`, `tenantQuery.ts`, `transaction.ts` viram `common/database/`.
-- [ ] **C — Logger e limpeza:** `console.*` → `Logger`; `enableShutdownHooks`; sobras de exports de função.
-- [ ] **D — Docs:** `CLAUDE.md`, `testing.md` (unit test de service = `new Service(mockDeps)`, sem `vi.mock` de caminho; controller test = `createTestApp({ controllers, providers })` com `useValue`), `error-handling.md`.
+- [x] **A — Infra:** SWC no Vitest e nos scripts `dev`/`seed`; `Database` (pool via `PG_POOL`), `TenantDb`/`TenantTx` (backstop preservado, `query` `async`), `MigrationsService` (`onModuleInit`), `DatabaseModule` global.
+- [x] **B — Varredura:** 12 repositories, 18 services, 4 clients, `OrderEvents`, `ProductImageStorage` e o executor de ferramentas do agente viraram classes; um `*.module.ts` por contexto (`Tenants`, `Auth`, `Health`, `Settings`, `Customer`, `Menu`, `Geo`, `Store`, `Conversation`, `Inbound`, `Order`, `MenuLink`, `Ai`, `Agent`, `Simulator`, `Dashboard`, `WhatsApp`, `WhatsAppClient`) e `AppModule` importando todos. Ciclo desfeito com `OutboundMessenger` (em `ConversationModule`) separado de `ConversationService` (em `InboundModule`). Erros que moravam em service (`InvalidSettingsError`, `TenantNotFoundError`) foram para `errors/`; código puro que dividia arquivo com service foi para `utils/` (`persona`, `menu.parse`, `store.parse`, `order.parse`, `customer.phone`, `simulator.contact`). `config/db|migrate|tenantQuery|transaction` sumiram; `seed.ts` monta `Pool` + `MigrationsService` à mão (script fora do Nest).
+- [x] **C — Logger e limpeza:** `console.*` → `Logger` do Nest em toda classe injetável e no `mapError`; `enableShutdownHooks()` (o `Database` fecha o pool no SIGTERM). Sobra `console` só em `index.ts` (boot) e `seed.ts` (CLI).
+- [x] **D — Docs:** `CLAUDE.md`, `testing.md`, `error-handling.md`.
+
+Achados que os testes pegaram durante a varredura (todos de PARIDADE com o código antigo):
+- Função que era `async` precisa continuar `async` como método: `TenantDb.query` (violação do backstop chega como rejeição) e `StoreService.createZone` (entrada inválida rejeita, não lança síncrono) quebraram testes até serem corrigidos.
+- `@Header("Content-Type", …)` vaza para o JSON de erro (já anotado na Fase N).
+- Um `productImagesDir` errado (`src/produtos`) foi corrigido na Etapa 3 da Fase N; o smoke com upload real confirmou `backend/produtos`.
+
+Fica fora (decisão consciente, ver acima): `env` continua importado (não injetado) e a validação segue nos parsers puros (sem `class-validator`). `toolCallHuman`, `resolveZone` e demais helpers puros do executor continuam funções no mesmo arquivo.
+
+Verificação final: `tsc` limpo, `eslint` 0 erros (4 warnings: `console` de boot/CLI), 1014 testes (o total anterior, 1004, + 19 da infra − 9 do `tenantQuery.test` que virou `tenantScope`/`tenantDb`), boot compilado e boot via SWC contra o Postgres, e smoke: login, todas as rotas guardadas, `dev-sample`, upload, SSE, mensagem no simulador (agente respondeu), webhook com assinatura válida (200) e inválida (403).
 
 ### Como os testes mudam
 

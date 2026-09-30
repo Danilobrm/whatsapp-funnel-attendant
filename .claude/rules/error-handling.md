@@ -88,4 +88,5 @@ O backend é NestJS 12 (`PLAN.md`, Fase N, concluída).
 - O filter trata `HttpException` do próprio Nest (rota inexistente → 404 `route_not_found`, JSON inválido → 400 `http_error`) e não escreve corpo se `res.headersSent` (SSE).
 - **Não use `@Header(...)` no handler** para definir `Content-Type` de sucesso: o header vaza para o JSON de erro do filter. Defina com `res.type(...)` (`@Res({ passthrough: true })`) só no caminho de sucesso.
 - POST que não cria recurso responde 200 (`@HttpCode(200)`); o padrão do Nest é 201.
-- Injeção por tipo no construtor NÃO funciona sob `tsx`/Vitest (sem `emitDecoratorMetadata`): use `@Inject(Token)` explícito.
+- Injeção por tipo no construtor funciona em dev e nos testes porque `dev`/`seed` rodam com `@swc-node/register` e o Vitest usa `unplugin-swc` (que emitem `design:paramtypes`); `@Inject(Token)` só para tokens que não são classe (ex.: `PG_POOL`). Não volte o `dev` para `tsx`: a injeção quebraria em silêncio.
+- Classes injetáveis logam com `new Logger(NomeDaClasse.name)`, não com `console`.
