@@ -17,6 +17,7 @@ import { OrderEvents } from "../events/order.events.js";
 import { OrderService } from "../services/order.service.js";
 import { parseTransitionInput } from "../utils/order.parse.js";
 
+import type { OnModuleDestroy } from "@nestjs/common";
 import type { RequestAuth } from "../../auth/types/auth.types.js";
 import type { TenantId } from "../../tenants/types/tenant.types.js";
 import type { Request, Response } from "express";
@@ -33,7 +34,10 @@ function idParam(raw: string): number {
 }
 
 @Controller("api/orders")
-export class OrderController {
+export class OrderController implements OnModuleDestroy {
+  /** Fechadores dos streams SSE abertos: no shutdown todos são encerrados. */
+  private readonly openStreams = new Set<() => void>();
+
   constructor(
     private readonly orders: OrderService,
     private readonly events: OrderEvents,
@@ -81,10 +85,30 @@ export class OrderController {
       res.write(": ping\n\n");
     }, STREAM_HEARTBEAT_MS);
 
-    req.on("close", () => {
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return; // shutdown e `close` da conexão podem chegar os dois
+      cleaned = true;
       clearInterval(heartbeat);
       unsubscribe();
-    });
+      this.openStreams.delete(close);
+    };
+    const close = () => {
+      cleanup();
+      res.end();
+    };
+    this.openStreams.add(close);
+    req.on("close", cleanup);
+  }
+
+  /**
+   * Sem isto o `Ctrl+C` (e o restart do `node --watch`) trava: o Nest fecha o
+   * servidor HTTP e espera as conexões terminarem, mas um stream SSE nunca
+   * termina sozinho — o processo ficava vivo, recusando novas requisições.
+   * Roda antes do `server.close()` (hooks de destroy vêm primeiro).
+   */
+  onModuleDestroy(): void {
+    for (const close of [...this.openStreams]) close();
   }
 
   /**

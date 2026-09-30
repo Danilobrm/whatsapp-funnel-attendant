@@ -306,4 +306,59 @@ describe("order controller", () => {
       }
     });
   });
+
+  describe("shutdown com o stream aberto (Ctrl+C / restart do watch)", () => {
+    it("app.close() NÃO trava: encerra o stream SSE, para o ping e libera o listener", async () => {
+      // Contador PRÓPRIO: o `unsubscribed` compartilhado recebe limpezas tardias de outros testes.
+      const offs = vi.fn();
+      const ownEvents = {
+        ...events,
+        subscribeOrders: (
+          ...args: Parameters<typeof realEvents.subscribeOrders>
+        ) => {
+          const off = realEvents.subscribeOrders(...args);
+          return () => {
+            off();
+            offs();
+          };
+        },
+      };
+      const closing = await createControllerTestApp({
+        controllers: [OrderController],
+        providers: [
+          { provide: OrderService, useValue: service },
+          { provide: OrderEvents, useValue: ownEvents },
+        ],
+      });
+      await closing.listen(0);
+      const { port } = closing.getHttpServer().address() as { port: number };
+      let ended = false;
+      const req = httpRequest({
+        host: "127.0.0.1",
+        port,
+        path: "/api/orders/stream",
+        headers: { Authorization: auth() },
+      });
+      await new Promise<void>((resolve, reject) => {
+        req.on("response", (res) => {
+          res.on("end", () => {
+            ended = true;
+          });
+          res.resume();
+          resolve();
+        });
+        req.on("error", reject);
+        req.end();
+      });
+
+      const closed = closing.close().then(() => "closed" as const);
+      const hung = new Promise<"hung">((r) =>
+        setTimeout(() => r("hung"), 3000),
+      );
+
+      await expect(Promise.race([closed, hung])).resolves.toBe("closed");
+      await vi.waitFor(() => expect(ended).toBe(true));
+      expect(offs).toHaveBeenCalledTimes(1);
+    });
+  });
 });
