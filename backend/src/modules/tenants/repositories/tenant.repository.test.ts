@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-}));
+import { TenantRepository } from "./tenant.repository.js";
 
-const db = await import("../../../config/db.js");
-const { findTenantById, findTenantByWhatsAppPhoneNumberId } =
-  await import("./tenant.repository.js");
+import type { Database } from "../../../common/database/database.js";
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
+const query = vi.fn();
+const repository = new TenantRepository({ query } as unknown as Database);
+const { findTenantById, findTenantByWhatsAppPhoneNumberId } = {
+  findTenantById: repository.findTenantById.bind(repository),
+  findTenantByWhatsAppPhoneNumberId:
+    repository.findTenantByWhatsAppPhoneNumberId.bind(repository),
+};
 
 beforeEach(() => {
   vi.resetAllMocks();

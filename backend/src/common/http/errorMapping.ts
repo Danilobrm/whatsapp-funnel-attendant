@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import multer from "multer";
 
 import {
@@ -16,8 +17,8 @@ import {
   InvalidTransitionError,
   OrderNotFoundError,
 } from "../../modules/order/errors/order.errors.js";
-import { InvalidSettingsError } from "../../modules/settings/services/settings.service.js";
-import { TenantNotFoundError } from "../../modules/tenants/services/tenant.service.js";
+import { InvalidSettingsError } from "../../modules/settings/errors/settings.errors.js";
+import { TenantNotFoundError } from "../../modules/tenants/errors/tenant.errors.js";
 
 export interface MappedError {
   status: number;
@@ -131,9 +132,10 @@ export function mapError(error: unknown): MappedError {
   };
 }
 
+const logger = new Logger("ExceptionFilter");
+
 export function logUnhandledError(error: unknown): void {
-  console.error(
-    "Unhandled error:",
-    error instanceof Error ? (error.stack ?? error.message) : String(error),
+  logger.error(
+    `Unhandled error: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
   );
 }

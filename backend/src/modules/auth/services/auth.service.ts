@@ -1,6 +1,8 @@
+import { Injectable } from "@nestjs/common";
+
 import { UnauthorizedError } from "../errors/auth.errors.js";
 import { signAuthToken } from "../utils/jwt.js";
-import { findUserByEmail, findUserById } from "../repositories/auth.repository.js";
+import { AuthRepository } from "../repositories/auth.repository.js";
 import { verifyPassword } from "../utils/password.js";
 
 import type { AuthUser, LoginResult } from "../types/auth.types.js";
@@ -26,43 +28,48 @@ interface LoginInput {
   password?: unknown;
 }
 
-export async function login(input: unknown): Promise<LoginResult> {
-  const { email, password } = (input ?? {}) as LoginInput;
+@Injectable()
+export class AuthService {
+  constructor(private readonly users: AuthRepository) {}
 
-  const normalizedEmail =
-    typeof email === "string" ? email.trim().toLowerCase() : "";
-  const plainPassword = typeof password === "string" ? password : "";
+  async login(input: unknown): Promise<LoginResult> {
+    const { email, password } = (input ?? {}) as LoginInput;
 
-  // Campo vazio é credencial inválida, não erro de validação: distinguir os
-  // dois já entrega ao atacante metade da resposta.
-  if (normalizedEmail === "" || plainPassword === "") {
-    throw new UnauthorizedError("invalid_credentials");
+    const normalizedEmail =
+      typeof email === "string" ? email.trim().toLowerCase() : "";
+    const plainPassword = typeof password === "string" ? password : "";
+
+    // Campo vazio é credencial inválida, não erro de validação: distinguir os
+    // dois já entrega ao atacante metade da resposta.
+    if (normalizedEmail === "" || plainPassword === "") {
+      throw new UnauthorizedError("invalid_credentials");
+    }
+
+    const user = await this.users.findUserByEmail(normalizedEmail);
+    const matches = await verifyPassword(
+      plainPassword,
+      user?.passwordHash ?? DUMMY_HASH,
+    );
+
+    if (user === null || !matches) {
+      throw new UnauthorizedError("invalid_credentials");
+    }
+
+    const token = signAuthToken({ userId: user.id, tenantId: user.tenant.id });
+    return { token, user: toAuthUser(user) };
   }
 
-  const user = await findUserByEmail(normalizedEmail);
-  const matches = await verifyPassword(
-    plainPassword,
-    user?.passwordHash ?? DUMMY_HASH,
-  );
-
-  if (user === null || !matches) {
-    throw new UnauthorizedError("invalid_credentials");
+  /**
+   * Relê o usuário do token. O frontend chama no boot para descobrir que uma
+   * sessão guardada no localStorage já morreu, em vez de renderizar `/admin` até
+   * a primeira chamada de API falhar.
+   */
+  async currentUser(userId: number): Promise<AuthUser> {
+    const user = await this.users.findUserById(userId);
+    if (user === null) {
+      // Token válido de um usuário que não existe mais (tenant removido).
+      throw new UnauthorizedError("invalid_token");
+    }
+    return toAuthUser(user);
   }
-
-  const token = signAuthToken({ userId: user.id, tenantId: user.tenant.id });
-  return { token, user: toAuthUser(user) };
-}
-
-/**
- * Relê o usuário do token. O frontend chama no boot para descobrir que uma
- * sessão guardada no localStorage já morreu, em vez de renderizar `/admin` até
- * a primeira chamada de API falhar.
- */
-export async function currentUser(userId: number): Promise<AuthUser> {
-  const user = await findUserById(userId);
-  if (user === null) {
-    // Token válido de um usuário que não existe mais (tenant removido).
-    throw new UnauthorizedError("invalid_token");
-  }
-  return toAuthUser(user);
 }

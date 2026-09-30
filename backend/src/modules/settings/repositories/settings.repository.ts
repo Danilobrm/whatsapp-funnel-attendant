@@ -1,5 +1,6 @@
-import { tenantQuery } from "../../../config/tenantQuery.js";
+import { Injectable } from "@nestjs/common";
 
+import { TenantDb } from "../../../common/database/tenantDb.js";
 import type { TenantId } from "../../tenants/types/tenant.types.js";
 import type { BotSettings } from "../types/settings.types.js";
 
@@ -24,51 +25,54 @@ function toBotSettings(row: BotSettingsRow): BotSettings {
   };
 }
 
-/**
- * Configuração do bot do tenant. `null` quando ele ainda não personalizou nada
- * — o serviço cai nos defaults, não é erro.
- */
-export async function findBotSettings(
-  tenantId: TenantId,
-): Promise<BotSettings | null> {
-  const result = await tenantQuery<BotSettingsRow>(
-    tenantId,
-    `SELECT name, personality, gender, languages, updated_at
-       FROM bot_settings
-      WHERE tenant_id = $1`,
-    [tenantId],
-  );
+@Injectable()
+export class SettingsRepository {
+  constructor(private readonly db: TenantDb) {}
 
-  const row = result.rows[0];
-  return row ? toBotSettings(row) : null;
-}
-
-/** Upsert por tenant — devolve o estado persistido, não o de entrada. */
-export async function saveBotSettings(
-  tenantId: TenantId,
-  settings: Omit<BotSettings, "updatedAt">,
-): Promise<BotSettings> {
-  const result = await tenantQuery<BotSettingsRow>(
-    tenantId,
-    `INSERT INTO bot_settings (tenant_id, name, personality, gender, languages, updated_at)
-     VALUES ($1, $2, $3, $4, $5::text[], CURRENT_TIMESTAMP)
-     ON CONFLICT (tenant_id) DO UPDATE
-        SET name = EXCLUDED.name,
-            personality = EXCLUDED.personality,
-            gender = EXCLUDED.gender,
-            languages = EXCLUDED.languages,
-            updated_at = CURRENT_TIMESTAMP
-     RETURNING name, personality, gender, languages, updated_at`,
-    [
+  /**
+   * Configuração do bot do tenant. `null` quando ele ainda não personalizou nada
+   * — o serviço cai nos defaults, não é erro.
+   */
+  async findBotSettings(tenantId: TenantId): Promise<BotSettings | null> {
+    const result = await this.db.query<BotSettingsRow>(
       tenantId,
-      settings.name,
-      settings.personality,
-      settings.gender,
-      settings.languages,
-    ],
-  );
+      `SELECT name, personality, gender, languages, updated_at
+         FROM bot_settings
+        WHERE tenant_id = $1`,
+      [tenantId],
+    );
 
-  const row = result.rows[0];
-  if (!row) throw new Error("Falha ao salvar a configuração do chatbot");
-  return toBotSettings(row);
+    const row = result.rows[0];
+    return row ? toBotSettings(row) : null;
+  }
+
+  /** Upsert por tenant — devolve o estado persistido, não o de entrada. */
+  async saveBotSettings(
+    tenantId: TenantId,
+    settings: Omit<BotSettings, "updatedAt">,
+  ): Promise<BotSettings> {
+    const result = await this.db.query<BotSettingsRow>(
+      tenantId,
+      `INSERT INTO bot_settings (tenant_id, name, personality, gender, languages, updated_at)
+       VALUES ($1, $2, $3, $4, $5::text[], CURRENT_TIMESTAMP)
+       ON CONFLICT (tenant_id) DO UPDATE
+          SET name = EXCLUDED.name,
+              personality = EXCLUDED.personality,
+              gender = EXCLUDED.gender,
+              languages = EXCLUDED.languages,
+              updated_at = CURRENT_TIMESTAMP
+       RETURNING name, personality, gender, languages, updated_at`,
+      [
+        tenantId,
+        settings.name,
+        settings.personality,
+        settings.gender,
+        settings.languages,
+      ],
+    );
+
+    const row = result.rows[0];
+    if (!row) throw new Error("Falha ao salvar a configuração do chatbot");
+    return toBotSettings(row);
+  }
 }

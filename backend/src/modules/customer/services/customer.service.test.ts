@@ -1,40 +1,16 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/customer.repository.js", () => ({ upsertCustomer: vi.fn() }));
-
-const repo = await import("../repositories/customer.repository.js");
-const { customerPhoneFor, resolveCustomer } =
-  await import("./customer.service.js");
+const upsertCustomer = vi.fn();
+const { CustomerService } = await import("./customer.service.js");
+const service = new CustomerService({ upsertCustomer } as never);
+const resolveCustomer = service.resolveCustomer.bind(service);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
-const upsertCustomer = repo.upsertCustomer as unknown as ReturnType<
-  typeof vi.fn
->;
 const TENANT = asTenantId(2);
 
 beforeEach(() => {
   vi.resetAllMocks();
-});
-
-describe("customerPhoneFor", () => {
-  it("uses the wa_id as the phone on WhatsApp", () => {
-    expect(customerPhoneFor("whatsapp", "5561990000001")).toBe("5561990000001");
-  });
-
-  it("strips the sim- prefix for simulated customers", () => {
-    expect(customerPhoneFor("simulator", "sim-5561990000009")).toBe(
-      "5561990000009",
-    );
-  });
-
-  it("keeps the admin default contact as-is", () => {
-    expect(customerPhoneFor("simulator", "admin-3")).toBe("admin-3");
-  });
-
-  // Um contato de WhatsApp que por acaso comece com "sim-" não é simulado.
-  it("only treats sim- as a prefix on the simulator channel", () => {
-    expect(customerPhoneFor("whatsapp", "sim-1")).toBe("sim-1");
-  });
 });
 
 describe("resolveCustomer", () => {
@@ -55,7 +31,7 @@ describe("resolveCustomer", () => {
 
   // Sem cadastro o agente só perde o contexto de recorrente; o cliente é atendido.
   it("never throws — a repository failure becomes null", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
     upsertCustomer.mockRejectedValue(new Error("db down"));
 
     await expect(

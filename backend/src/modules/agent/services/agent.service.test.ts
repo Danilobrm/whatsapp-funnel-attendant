@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
@@ -6,18 +7,16 @@ const createChatLlm = vi.fn();
 const executeTool = vi.fn();
 const loadPromptContext = vi.fn();
 
-vi.mock("../../ai/clients/llm-client.js", () => ({
-  createChatLlm: () => createChatLlm(),
-}));
-vi.mock("../tools/executor.js", () => ({
-  executeTool: (...args: unknown[]) => executeTool(...args),
-}));
-vi.mock("./agent.context.js", () => ({
-  loadPromptContext: (...args: unknown[]) => loadPromptContext(...args),
-}));
-
-const { generateAgentReply, MAX_TOOL_ITERATIONS } =
+const { AgentService, MAX_TOOL_ITERATIONS } =
   await import("./agent.service.js");
+const agentService = new AgentService(
+  { createChatLlm: () => createChatLlm() } as never,
+  {
+    loadPromptContext: (...args: unknown[]) => loadPromptContext(...args),
+  } as never,
+  { executeTool: (...args: unknown[]) => executeTool(...args) } as never,
+);
+const generateAgentReply = agentService.generateAgentReply.bind(agentService);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const INPUT = {
@@ -49,7 +48,7 @@ beforeEach(() => {
     menuSummary: null,
     customer: null,
   });
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 });
 
 describe("generateAgentReply — conversa", () => {

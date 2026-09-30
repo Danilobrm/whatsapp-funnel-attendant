@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MENU, ZONES } from "../../order/utils/fixtures.test-util.js";
@@ -20,22 +21,9 @@ const invoke = vi.fn(async () => {
   return next;
 });
 
-vi.mock("../../ai/clients/llm-client.js", () => ({
-  createChatLlm: async () => ({ bindTools: () => ({ invoke }) }),
-}));
-vi.mock("../services/agent.context.js", () => ({
-  loadPromptContext: async () => ({
-    store: undefined,
-    menuSummary: null,
-    customer: null,
-  }),
-}));
-vi.mock("../../menu/services/menu.service.js", () => ({ getPublishedMenu: vi.fn() }));
-vi.mock("../../store/services/store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-  listZones: vi.fn(),
-}));
-vi.mock("../../order/repositories/cart.repository.js", () => ({
+const menuService = { getPublishedMenu: vi.fn() };
+const storeService = { getStoreSettings: vi.fn(), listZones: vi.fn() };
+const cartRepo = {
   findCart: vi.fn(async () => stored),
   deleteCart: vi.fn(async () => {
     stored = null;
@@ -53,26 +41,40 @@ vi.mock("../../order/repositories/cart.repository.js", () => ({
     }
     return false;
   }),
-}));
-vi.mock("../../order/services/order.service.js", () => ({ createOrder: vi.fn() }));
-vi.mock("../../menulink/services/menuLink.service.js", () => ({
-  createMenuLink: vi.fn(),
-}));
-vi.mock("../../menulink/repositories/menuLink.repository.js", () => ({
-  insertMenuLinkOrdered: vi.fn(),
-}));
-vi.mock("../../customer/repositories/customer.repository.js", () => ({
-  updateCustomerLastAddress: vi.fn(),
-}));
+};
+const orderService = { createOrder: vi.fn() };
+const linkService = { createMenuLink: vi.fn() };
+const linkRepo = { insertMenuLinkOrdered: vi.fn() };
+const customerRepo = { updateCustomerLastAddress: vi.fn() };
 
-const menuService = await import("../../menu/services/menu.service.js");
-const storeService = await import("../../store/services/store.service.js");
-const orderService = await import("../../order/services/order.service.js");
-const linkService = await import("../../menulink/services/menuLink.service.js");
-const linkRepo = await import("../../menulink/repositories/menuLink.repository.js");
-const customerRepo = await import("../../customer/repositories/customer.repository.js");
-const { generateAgentReply } = await import("../services/agent.service.js");
+const { CartService } = await import("../../order/services/cart.service.js");
+const { AgentToolExecutor } = await import("../tools/executor.js");
+const { AgentService } = await import("../services/agent.service.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
+
+// LLM roteirizado + contexto fixo; executor e carrinho de verdade.
+const executor = new AgentToolExecutor(
+  menuService as never,
+  linkRepo as never,
+  linkService as never,
+  cartRepo as never,
+  new CartService(cartRepo as never),
+  orderService as never,
+  storeService as never,
+  customerRepo as never,
+);
+const agent = new AgentService(
+  { createChatLlm: async () => ({ bindTools: () => ({ invoke }) }) } as never,
+  {
+    loadPromptContext: async () => ({
+      store: undefined,
+      menuSummary: null,
+      customer: null,
+    }),
+  } as never,
+  executor,
+);
+const generateAgentReply = agent.generateAgentReply.bind(agent);
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const createOrder = mock(orderService.createOrder);
@@ -156,7 +158,7 @@ beforeEach(() => {
     "https://loja.app/c/tok.en.sig",
   );
   mock(linkRepo.insertMenuLinkOrdered).mockResolvedValue(undefined);
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 });
 
 describe("pedido completo pelo agente", () => {

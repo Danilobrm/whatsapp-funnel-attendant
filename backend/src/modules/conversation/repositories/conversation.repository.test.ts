@@ -1,22 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-}));
-
-const db = await import("../../../config/db.js");
+const query = vi.fn();
+const { ConversationRepository } = await import("./conversation.repository.js");
+const { TenantDb } = await import("../../../common/database/tenantDb.js");
+const { bound } = await import("../../../test/bind.js");
+const repository = new ConversationRepository(new TenantDb({ query } as never));
 const {
-  deleteConversation,
-  findConversationId,
-  findConversationTarget,
-  findMessagesByContact,
-  findRecentMessages,
-  insertMessage,
   upsertConversation,
-} = await import("./conversation.repository.js");
+  insertMessage,
+  findRecentMessages,
+  findConversationId,
+  findMessagesByContact,
+  deleteConversation,
+  findConversationTarget,
+} = bound(repository, [
+  "upsertConversation",
+  "insertMessage",
+  "findRecentMessages",
+  "findConversationId",
+  "findMessagesByContact",
+  "deleteConversation",
+  "findConversationTarget",
+]);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(4);
 
 beforeEach(() => {

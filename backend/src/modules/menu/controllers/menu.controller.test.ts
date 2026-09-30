@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import request from "supertest";
 import {
   afterAll,
@@ -9,7 +10,7 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../services/menu.service.js", () => ({
+const service = {
   createCategory: vi.fn(),
   createItem: vi.fn(),
   deleteCategory: vi.fn(),
@@ -20,29 +21,32 @@ vi.mock("../services/menu.service.js", () => ({
   setItemAvailability: vi.fn(),
   updateCategory: vi.fn(),
   updateItem: vi.fn(),
-}));
-vi.mock("../storage/imageStorage.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../storage/imageStorage.js")>();
-  return { ...actual, saveProductImage: vi.fn() };
-});
+};
+const imageStorage = { saveProductImage: vi.fn() };
 
-const service = await import("../services/menu.service.js");
-const imageStorage = await import("../storage/imageStorage.js");
-const { MenuModule } = await import("../menu.module.js");
+const { MenuController } = await import("./menu.controller.js");
+const { MenuService } = await import("../services/menu.service.js");
+const { ProductImageStorage } = await import("../storage/imageStorage.js");
 const { MAX_IMAGE_BYTES } =
   await import("../interceptors/productImageUpload.interceptor.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const TENANT = asTenantId(1);
 const fn = <T>(f: T) => f as unknown as ReturnType<typeof vi.fn>;
 
 describe("menu controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(MenuModule);
+    app = await createControllerTestApp({
+      controllers: [MenuController],
+      providers: [
+        { provide: MenuService, useValue: service },
+        { provide: ProductImageStorage, useValue: imageStorage },
+      ],
+    });
   });
   afterAll(async () => {
     await app.close();
@@ -93,7 +97,9 @@ describe("menu controller", () => {
     });
 
     it("falha inesperada vira 500 seguro", async () => {
-      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logged = vi
+        .spyOn(Logger.prototype, "error")
+        .mockImplementation(() => {});
       fn(service.createCategory).mockRejectedValue(new Error("boom"));
 
       const res = await request(http())

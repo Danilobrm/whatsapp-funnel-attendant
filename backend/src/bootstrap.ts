@@ -3,7 +3,7 @@ import { NestFactory } from "@nestjs/core";
 
 import { AppModule } from "./app.module.js";
 import { env } from "./config/env.js";
-import { productImagesDir } from "./modules/menu/storage/imageStorage.js";
+import { ProductImageStorage } from "./modules/menu/storage/imageStorage.js";
 
 import type { Type } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -29,8 +29,20 @@ export async function createApp(
     rawBody: true,
   });
 
-  app.enableCors({ origin: env.corsOrigin });
-  app.useStaticAssets(productImagesDir(), { prefix: "/produtos" });
-
+  configureApp(app);
   return app;
+}
+
+/**
+ * Configuração HTTP do app (CORS, shutdown hooks, fotos estáticas), separada
+ * do `create` para o teste do app inteiro montar o módulo com `overrideProvider`
+ * e aplicar a MESMA configuração.
+ */
+export function configureApp(app: NestExpressApplication): void {
+  app.enableCors({ origin: env.corsOrigin });
+  // Fecha o pool e o resto no SIGTERM (`docker stop`) em vez de cortar a conexão.
+  app.enableShutdownHooks();
+  app.useStaticAssets(app.get(ProductImageStorage).productImagesDir(), {
+    prefix: "/produtos",
+  });
 }

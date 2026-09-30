@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/auth.repository.js", () => ({
-  findUserByEmail: vi.fn(),
-  findUserById: vi.fn(),
-}));
-
-const repository = await import("../repositories/auth.repository.js");
+const repository = { findUserByEmail: vi.fn(), findUserById: vi.fn() };
 const { verifyAuthToken } = await import("../utils/jwt.js");
 const { hashPassword } = await import("../utils/password.js");
 const { UnauthorizedError } = await import("../errors/auth.errors.js");
-const { currentUser, login } = await import("./auth.service.js");
+const { AuthService } = await import("./auth.service.js");
+const service = new AuthService(repository as never);
+const login = service.login.bind(service);
+const currentUser = service.currentUser.bind(service);
 
 const findUserByEmail = repository.findUserByEmail as unknown as ReturnType<
   typeof vi.fn

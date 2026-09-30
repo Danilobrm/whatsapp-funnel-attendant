@@ -1,16 +1,11 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../geo/clients/google.client.js", () => ({
-  reverseGeocodeGoogle: vi.fn(),
-}));
-vi.mock("./store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-  updateStoreSettings: vi.fn(),
-}));
-
-const google = await import("../../geo/clients/google.client.js");
-const service = await import("./store.service.js");
-const { setStoreLocation } = await import("./store.location.js");
+const google = { reverseGeocodeGoogle: vi.fn() };
+const service = { getStoreSettings: vi.fn(), updateStoreSettings: vi.fn() };
+const { StoreLocationService } = await import("./store.location.js");
+const location = new StoreLocationService(service as never, google as never);
+const setStoreLocation = location.setStoreLocation.bind(location);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const TENANT = asTenantId(4);
@@ -46,7 +41,7 @@ describe("setStoreLocation", () => {
   });
 
   it("clears the old address when Google finds none or fails, but keeps the point", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
     for (const setup of [
       () => vi.mocked(google.reverseGeocodeGoogle).mockResolvedValue(null),
       () =>

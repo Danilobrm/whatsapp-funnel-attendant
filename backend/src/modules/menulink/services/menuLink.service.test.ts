@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,48 +8,38 @@ import {
 } from "../../order/utils/fixtures.test-util.js";
 import { emptyCart } from "../../order/types/cart.types.js";
 
-vi.mock("../../conversation/repositories/conversation.repository.js", () => ({
-  findConversationTarget: vi.fn(),
-}));
-vi.mock("../../conversation/services/conversation.service.js", () => ({
-  sendOutbound: vi.fn(),
-}));
-vi.mock("../../menu/services/menu.service.js", () => ({
-  getPublishedMenu: vi.fn(),
-}));
-vi.mock("../../order/services/cart.service.js", () => ({
-  getCart: vi.fn(),
-  saveEditedCart: vi.fn(),
-}));
-vi.mock("../../store/services/store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-  listZones: vi.fn(),
-}));
-vi.mock("../../tenants/repositories/tenant.repository.js", () => ({
-  findTenantById: vi.fn(),
-}));
-vi.mock("../repositories/menuLink.repository.js", () => ({
+const convRepo = { findConversationTarget: vi.fn() };
+const convService = { sendOutbound: vi.fn() };
+const menuService = { getPublishedMenu: vi.fn() };
+const cartService = { getCart: vi.fn(), saveEditedCart: vi.fn() };
+const storeService = { getStoreSettings: vi.fn(), listZones: vi.fn() };
+const tenantRepo = { findTenantById: vi.fn() };
+const linkRepo = {
   insertMenuLinkEvent: vi.fn(),
   findActiveMenuLink: vi.fn(),
   insertMenuLink: vi.fn(),
   deleteStaleMenuLinks: vi.fn(),
   findMenuLinkByCode: vi.fn(),
-}));
+};
 
-const convRepo =
-  await import("../../conversation/repositories/conversation.repository.js");
-const convService =
-  await import("../../conversation/services/conversation.service.js");
-const menuService = await import("../../menu/services/menu.service.js");
-const cartService = await import("../../order/services/cart.service.js");
-const storeService = await import("../../store/services/store.service.js");
-const tenantRepo =
-  await import("../../tenants/repositories/tenant.repository.js");
-const linkRepo = await import("../repositories/menuLink.repository.js");
 const { env } = await import("../../../config/env.js");
-const { createMenuLink, getPublicMenuView, confirmPublicCart } =
-  await import("./menuLink.service.js");
+const { MenuLinkService } = await import("./menuLink.service.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
+
+const menuLinkService = new MenuLinkService(
+  linkRepo as never,
+  convRepo as never,
+  convService as never,
+  menuService as never,
+  cartService as never,
+  storeService as never,
+  tenantRepo as never,
+);
+const createMenuLink = menuLinkService.createMenuLink.bind(menuLinkService);
+const getPublicMenuView =
+  menuLinkService.getPublicMenuView.bind(menuLinkService);
+const confirmPublicCart =
+  menuLinkService.confirmPublicCart.bind(menuLinkService);
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(4);
@@ -112,7 +103,7 @@ beforeEach(() => {
   mock(linkRepo.insertMenuLink).mockResolvedValue(true);
   mock(linkRepo.deleteStaleMenuLinks).mockResolvedValue(undefined);
   mock(convService.sendOutbound).mockResolvedValue(true);
-  vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 });
 
 describe("createMenuLink", () => {

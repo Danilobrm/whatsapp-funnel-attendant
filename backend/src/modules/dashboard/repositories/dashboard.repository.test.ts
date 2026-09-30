@@ -1,15 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-}));
-
-const db = await import("../../../config/db.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
-const { breakdown, countActive, dailyTotals, topItems } =
-  await import("./dashboard.repository.js");
+const query = vi.fn();
+const { DashboardRepository } = await import("./dashboard.repository.js");
+const { TenantDb } = await import("../../../common/database/tenantDb.js");
+const { bound } = await import("../../../test/bind.js");
+const repository = new DashboardRepository(new TenantDb({ query } as never));
+const { dailyTotals, topItems, breakdown, countActive } = bound(repository, [
+  "dailyTotals",
+  "topItems",
+  "breakdown",
+  "countActive",
+]);
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(8);
 const SINCE = new Date("2026-09-23T03:00:00.000Z");
 

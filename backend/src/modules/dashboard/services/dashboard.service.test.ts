@@ -1,23 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/dashboard.repository.js", () => ({
+const repo = {
   breakdown: vi.fn(),
   countActive: vi.fn(),
   dailyTotals: vi.fn(),
   topItems: vi.fn(),
-}));
-vi.mock("../../menulink/repositories/menuLink.repository.js", () => ({
-  countMenuFunnel: vi.fn(),
-}));
-vi.mock("../../store/services/store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-}));
-
-const repo = await import("../repositories/dashboard.repository.js");
-const funnel =
-  await import("../../menulink/repositories/menuLink.repository.js");
-const store = await import("../../store/services/store.service.js");
-const { getDashboard } = await import("./dashboard.service.js");
+};
+const funnel = { countMenuFunnel: vi.fn() };
+const store = { getStoreSettings: vi.fn() };
+const { DashboardService } = await import("./dashboard.service.js");
+const dashboardService = new DashboardService(
+  repo as never,
+  funnel as never,
+  store as never,
+);
+const getDashboard = dashboardService.getDashboard.bind(dashboardService);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;

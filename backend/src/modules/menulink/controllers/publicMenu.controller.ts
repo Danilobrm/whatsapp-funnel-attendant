@@ -13,10 +13,7 @@ import {
   RateLimit,
 } from "../../../common/decorators/auth.decorators.js";
 import { RateLimitGuard } from "../../../common/guards/rateLimit.guard.js";
-import {
-  confirmPublicCart,
-  getPublicMenuView,
-} from "../services/menuLink.service.js";
+import { MenuLinkService } from "../services/menuLink.service.js";
 
 /**
  * Rotas PÚBLICAS do cardápio em link. Não há `req.auth`: a credencial é o
@@ -28,10 +25,12 @@ import {
 @UseGuards(RateLimitGuard)
 @Controller("api/public")
 export class PublicMenuController {
+  constructor(private readonly menuLinks: MenuLinkService) {}
+
   @RateLimit({ windowMs: 60_000, max: 60 })
   @Get("menu/:code")
   getMenu(@Param("code") code: string) {
-    return getPublicMenuView(code);
+    return this.menuLinks.getPublicMenuView(code);
   }
 
   // 200, não o 201 padrão do Nest: confirmar o carrinho não cria recurso da API.
@@ -39,7 +38,7 @@ export class PublicMenuController {
   @HttpCode(200)
   @Post("cart/:code")
   async postCart(@Param("code") code: string, @Body() body: unknown) {
-    const cart = await confirmPublicCart(code, body);
+    const cart = await this.menuLinks.confirmPublicCart(code, body);
     return { cart };
   }
 }

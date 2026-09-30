@@ -1,21 +1,22 @@
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-vi.mock("../services/health.service.js", () => ({
-  getHealthReport: vi.fn(),
-}));
+const report = vi.fn();
 
-const { getHealthReport } = await import("../services/health.service.js");
-const { HealthModule } = await import("../health.module.js");
-const { createTestApp } = await import("../../../test/nestApp.js");
-
-const report = vi.mocked(getHealthReport);
+const { HealthController } = await import("./health.controller.js");
+const { HealthService } = await import("../services/health.service.js");
+const { createControllerTestApp } = await import("../../../test/nestApp.js");
 
 describe("GET /health", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(HealthModule);
+    app = await createControllerTestApp({
+      controllers: [HealthController],
+      providers: [
+        { provide: HealthService, useValue: { getHealthReport: report } },
+      ],
+    });
   });
   afterAll(async () => {
     await app.close();

@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import request from "supertest";
 import {
   afterAll,
@@ -9,40 +10,43 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../../conversation/repositories/conversation.repository.js", () => ({
+const convRepo = {
   deleteConversation: vi.fn(),
   findMessagesByContact: vi.fn(),
-}));
-vi.mock("../../conversation/services/conversation.service.js", () => ({
-  handleInboundMessage: vi.fn(),
-}));
-vi.mock("../services/simulator.service.js", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("../services/simulator.service.js")
-  >()),
+};
+const convService = { handleInboundMessage: vi.fn() };
+const simulator = {
   createCustomer: vi.fn(),
   getSimulatorCart: vi.fn(),
   listCustomers: vi.fn(),
-}));
+};
 
-const convRepo =
+const { SimulatorController, MAX_SIMULATOR_CHARS } =
+  await import("./simulator.controller.js");
+const { ConversationRepository } =
   await import("../../conversation/repositories/conversation.repository.js");
-const convService =
+const { ConversationService } =
   await import("../../conversation/services/conversation.service.js");
-const simulator = await import("../services/simulator.service.js");
-const { MAX_SIMULATOR_CHARS } = await import("./simulator.controller.js");
-const { SimulatorModule } = await import("../simulator.module.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
+const { SimulatorService } = await import("../services/simulator.service.js");
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(1);
 
 describe("simulator controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(SimulatorModule);
+    app = await createControllerTestApp({
+      controllers: [SimulatorController],
+      providers: [
+        { provide: ConversationRepository, useValue: convRepo },
+        { provide: ConversationService, useValue: convService },
+        { provide: SimulatorService, useValue: simulator },
+      ],
+    });
   });
   afterAll(async () => {
     await app.close();
@@ -261,7 +265,9 @@ describe("simulator controller", () => {
     });
 
     it("a service failure becomes a safe 500, not a process crash", async () => {
-      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logged = vi
+        .spyOn(Logger.prototype, "error")
+        .mockImplementation(() => {});
       mock(simulator.listCustomers).mockRejectedValue(new Error("db down"));
 
       const res = await request(http())

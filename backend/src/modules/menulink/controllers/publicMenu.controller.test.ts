@@ -9,25 +9,29 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../services/menuLink.service.js", () => ({
-  getPublicMenuView: vi.fn(),
-  confirmPublicCart: vi.fn(),
-}));
+const view = vi.fn();
+const confirm = vi.fn();
 
-const service = await import("../services/menuLink.service.js");
-const { MenuLinkModule } = await import("../menulink.module.js");
+const { PublicMenuController } = await import("./publicMenu.controller.js");
+const { MenuLinkService } = await import("../services/menuLink.service.js");
 const { UnauthorizedError } = await import("../../auth/errors/auth.errors.js");
 const { InvalidPublicCartError } = await import("../errors/menuLink.errors.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
-
-const view = vi.mocked(service.getPublicMenuView);
-const confirm = vi.mocked(service.confirmPublicCart);
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 
 describe("public menu controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(MenuLinkModule);
+    app = await createControllerTestApp({
+      controllers: [PublicMenuController],
+      providers: [
+        {
+          provide: MenuLinkService,
+          useValue: { getPublicMenuView: view, confirmPublicCart: confirm },
+        },
+      ],
+    });
   });
   afterAll(async () => {
     await app.close();
@@ -110,11 +114,19 @@ describe("public menu controller", () => {
   });
 
   describe("rate limit per IP", () => {
-    let limitedApp: Awaited<ReturnType<typeof createTestApp>>;
+    let limitedApp: Awaited<ReturnType<typeof createControllerTestApp>>;
 
     beforeAll(async () => {
       // App próprio: o balde do guard é por instância e os testes acima já gastaram o do `app`.
-      limitedApp = await createTestApp(MenuLinkModule);
+      limitedApp = await createControllerTestApp({
+        controllers: [PublicMenuController],
+        providers: [
+          {
+            provide: MenuLinkService,
+            useValue: { getPublicMenuView: view, confirmPublicCart: confirm },
+          },
+        ],
+      });
     });
     afterAll(async () => {
       await limitedApp.close();

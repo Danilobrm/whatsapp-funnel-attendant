@@ -1,42 +1,32 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/order.repository.js", () => ({
+const repo = {
   findOrderById: vi.fn(),
   insertOrder: vi.fn(),
   listBoardOrders: vi.fn(),
   updateOrderStatus: vi.fn(),
-}));
-vi.mock("../events/order.events.js", () => ({ publishOrderEvent: vi.fn() }));
-vi.mock("../../conversation/services/conversation.service.js", () => ({
-  sendOutbound: vi.fn(),
-}));
-vi.mock("../../conversation/repositories/conversation.repository.js", () => ({
-  upsertConversation: vi.fn(),
-}));
-vi.mock("../../store/services/store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-  listZones: vi.fn(),
-}));
-vi.mock("../../menu/services/menu.service.js", () => ({
-  getFullMenu: vi.fn(),
-}));
+};
+const events = { publishOrderEvent: vi.fn() };
+const conversation = { sendOutbound: vi.fn() };
+const conversationRepo = { upsertConversation: vi.fn() };
+const store = { getStoreSettings: vi.fn(), listZones: vi.fn() };
+const menu = { getFullMenu: vi.fn() };
 
-const repo = await import("../repositories/order.repository.js");
-const events = await import("../events/order.events.js");
-const conversation =
-  await import("../../conversation/services/conversation.service.js");
-const conversationRepo =
-  await import("../../conversation/repositories/conversation.repository.js");
-const store = await import("../../store/services/store.service.js");
-const menu = await import("../../menu/services/menu.service.js");
-const {
-  createOrder,
-  createSampleOrder,
-  listBoard,
-  parseTransitionInput,
-  transitionOrder,
-} = await import("./order.service.js");
-const { InvalidOrderError, InvalidTransitionError, OrderNotFoundError } =
+const { OrderService } = await import("./order.service.js");
+const orderService = new OrderService(
+  repo as never,
+  events as never,
+  conversationRepo as never,
+  conversation as never,
+  menu as never,
+  store as never,
+);
+const createOrder = orderService.createOrder.bind(orderService);
+const createSampleOrder = orderService.createSampleOrder.bind(orderService);
+const listBoard = orderService.listBoard.bind(orderService);
+const transitionOrder = orderService.transitionOrder.bind(orderService);
+const { InvalidTransitionError, OrderNotFoundError } =
   await import("../errors/order.errors.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
@@ -131,39 +121,6 @@ describe("listBoard", () => {
   });
 });
 
-describe("parseTransitionInput", () => {
-  it("status desconhecido → invalid_status", () => {
-    expect(() => parseTransitionInput({ to: "lixo" })).toThrow(
-      InvalidOrderError,
-    );
-  });
-
-  it("recusa sem motivo → reject_reason_required", () => {
-    expect(() => parseTransitionInput({ to: "rejected" })).toThrow(
-      expect.objectContaining({ code: "reject_reason_required" }),
-    );
-  });
-
-  it("motivo 'other' sem texto → reject_note_required", () => {
-    expect(() =>
-      parseTransitionInput({ to: "rejected", reason: "other", note: "  " }),
-    ).toThrow(expect.objectContaining({ code: "reject_note_required" }));
-  });
-
-  it("aceita recusa válida e ignora motivo em outras transições", () => {
-    expect(
-      parseTransitionInput({ to: "rejected", reason: "sold_out" }),
-    ).toEqual({
-      to: "rejected",
-      reason: "sold_out",
-      note: null,
-    });
-    expect(
-      parseTransitionInput({ to: "accepted", reason: "sold_out" }),
-    ).toEqual({ to: "accepted" });
-  });
-});
-
 describe("transitionOrder", () => {
   it("transição válida grava, publica e avisa o cliente", async () => {
     mock(repo.findOrderById).mockResolvedValue(order());
@@ -244,7 +201,7 @@ describe("transitionOrder", () => {
   });
 
   it("falha ao avisar o cliente NÃO desfaz a transição", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
     mock(repo.findOrderById).mockResolvedValue(order());
     mock(repo.updateOrderStatus).mockResolvedValue(
       order({ status: "accepted" }),

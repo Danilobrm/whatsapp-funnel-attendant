@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-}));
-
-const db = await import("../../../config/db.js");
-const { findUserByEmail, findUserById } = await import("./auth.repository.js");
-
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
+const query = vi.fn();
+const { AuthRepository } = await import("./auth.repository.js");
+const repository = new AuthRepository({ query } as never);
+const findUserByEmail = repository.findUserByEmail.bind(repository);
+const findUserById = repository.findUserById.bind(repository);
 
 const ROW = {
   id: 11,

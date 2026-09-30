@@ -8,71 +8,29 @@ import {
 } from "../../order/utils/fixtures.test-util.js";
 import { emptyCart } from "../../order/types/cart.types.js";
 
-vi.mock("../../conversation/repositories/conversation.repository.js", () => ({
-  findConversationId: vi.fn(),
-  upsertConversation: vi.fn(),
-}));
-vi.mock("../../customer/repositories/customer.repository.js", () => ({
-  listSimulatedCustomers: vi.fn(),
-  upsertCustomer: vi.fn(),
-}));
-vi.mock("../../menu/services/menu.service.js", () => ({
-  getPublishedMenu: vi.fn(),
-}));
-vi.mock("../../store/services/store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-  listZones: vi.fn(),
-}));
-vi.mock("../../order/services/cart.service.js", () => ({ getCart: vi.fn() }));
-
-const convRepo =
-  await import("../../conversation/repositories/conversation.repository.js");
-const custRepo =
-  await import("../../customer/repositories/customer.repository.js");
-const menuService = await import("../../menu/services/menu.service.js");
-const storeService = await import("../../store/services/store.service.js");
-const cartService = await import("../../order/services/cart.service.js");
-const { createCustomer, getSimulatorCart, listCustomers, simulatorContactFor } =
-  await import("./simulator.service.js");
+const convRepo = { findConversationId: vi.fn(), upsertConversation: vi.fn() };
+const custRepo = { listSimulatedCustomers: vi.fn(), upsertCustomer: vi.fn() };
+const menuService = { getPublishedMenu: vi.fn() };
+const storeService = { getStoreSettings: vi.fn(), listZones: vi.fn() };
+const cartService = { getCart: vi.fn() };
+const { SimulatorService } = await import("./simulator.service.js");
+const simulator = new SimulatorService(
+  convRepo as never,
+  custRepo as never,
+  menuService as never,
+  cartService as never,
+  storeService as never,
+);
+const createCustomer = simulator.createCustomer.bind(simulator);
+const getSimulatorCart = simulator.getSimulatorCart.bind(simulator);
+const listCustomers = simulator.listCustomers.bind(simulator);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
-const { InvalidInputError } =
-  await import("../../errors/invalidInput.error.js");
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(4);
 
 beforeEach(() => {
   vi.resetAllMocks();
-});
-
-describe("simulatorContactFor", () => {
-  it("defaults to the admin's own conversation", () => {
-    expect(simulatorContactFor(7, undefined)).toBe("admin-7");
-    expect(simulatorContactFor(7, null)).toBe("admin-7");
-    expect(simulatorContactFor(7, "")).toBe("admin-7");
-  });
-
-  it("maps a phone to a simulated customer conversation", () => {
-    expect(simulatorContactFor(7, "5561990000001")).toBe("sim-5561990000001");
-  });
-
-  // contactId vai para a query e para o nome do contato: só dígitos passam.
-  it.each([
-    "abc",
-    "12",
-    "5561 99000",
-    "../x",
-    "1".repeat(16),
-    ["5561990000001"],
-    5561990000001,
-  ])("rejects %j", (bad) => {
-    expect(() => simulatorContactFor(7, bad)).toThrow(InvalidInputError);
-    try {
-      simulatorContactFor(7, bad);
-    } catch (e) {
-      expect(e).toMatchObject({ code: "invalid_contact", field: "contactId" });
-    }
-  });
 });
 
 describe("createCustomer", () => {

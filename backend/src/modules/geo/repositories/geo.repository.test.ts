@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-}));
-
-const db = await import("../../../config/db.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
-const { findStoreGeo, saveStoreGeo } = await import("./geo.repository.js");
+const query = vi.fn();
+const { GeoRepository } = await import("./geo.repository.js");
+const { TenantDb } = await import("../../../common/database/tenantDb.js");
+const { bound } = await import("../../../test/bind.js");
+const repository = new GeoRepository(new TenantDb({ query } as never));
+const { findStoreGeo, saveStoreGeo } = bound(repository, [
+  "findStoreGeo",
+  "saveStoreGeo",
+]);
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(5);
 const POLY = {
   type: "Polygon" as const,

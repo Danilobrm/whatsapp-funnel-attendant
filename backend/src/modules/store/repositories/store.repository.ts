@@ -1,6 +1,7 @@
-import { tenantQuery } from "../../../config/tenantQuery.js";
-import { normalizeNeighborhood } from "../utils/neighborhood.js";
+import { Injectable } from "@nestjs/common";
 
+import { TenantDb } from "../../../common/database/tenantDb.js";
+import { normalizeNeighborhood } from "../utils/neighborhood.js";
 import type { TenantId } from "../../tenants/types/tenant.types.js";
 import type { OpeningHours } from "../utils/store.hours.js";
 import type {
@@ -62,81 +63,6 @@ const STORE_SETTINGS_COLUMNS = `timezone, opening_hours, paused, min_order_cents
        pix_key, owner_whatsapp, whatsapp_number, restaurant_name, logo_url,
        contact_email, address, latitude, longitude, updated_at`;
 
-/** `null` quando o tenant ainda não personalizou a loja — o serviço cai nos defaults. */
-export async function findStoreSettings(
-  tenantId: TenantId,
-): Promise<StoreSettings | null> {
-  const result = await tenantQuery<StoreSettingsRow>(
-    tenantId,
-    `SELECT ${STORE_SETTINGS_COLUMNS}
-       FROM store_settings
-      WHERE tenant_id = $1`,
-    [tenantId],
-  );
-
-  const row = result.rows[0];
-  return row ? toStoreSettings(row) : null;
-}
-
-export async function saveStoreSettings(
-  tenantId: TenantId,
-  settings: Omit<StoreSettings, "updatedAt">,
-): Promise<StoreSettings> {
-  const result = await tenantQuery<StoreSettingsRow>(
-    tenantId,
-    `INSERT INTO store_settings (
-        tenant_id, timezone, opening_hours, paused, min_order_cents,
-        estimated_minutes, pickup_enabled, delivery_enabled,
-        payment_methods, pix_key, owner_whatsapp, whatsapp_number, restaurant_name,
-        logo_url, contact_email, address, latitude, longitude, updated_at
-     ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9::text[], $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP)
-     ON CONFLICT (tenant_id) DO UPDATE
-        SET timezone = EXCLUDED.timezone,
-            opening_hours = EXCLUDED.opening_hours,
-            paused = EXCLUDED.paused,
-            min_order_cents = EXCLUDED.min_order_cents,
-            estimated_minutes = EXCLUDED.estimated_minutes,
-            pickup_enabled = EXCLUDED.pickup_enabled,
-            delivery_enabled = EXCLUDED.delivery_enabled,
-            payment_methods = EXCLUDED.payment_methods,
-            pix_key = EXCLUDED.pix_key,
-            owner_whatsapp = EXCLUDED.owner_whatsapp,
-            whatsapp_number = EXCLUDED.whatsapp_number,
-            restaurant_name = EXCLUDED.restaurant_name,
-            logo_url = EXCLUDED.logo_url,
-            contact_email = EXCLUDED.contact_email,
-            address = EXCLUDED.address,
-            latitude = EXCLUDED.latitude,
-            longitude = EXCLUDED.longitude,
-            updated_at = CURRENT_TIMESTAMP
-     RETURNING ${STORE_SETTINGS_COLUMNS}`,
-    [
-      tenantId,
-      settings.timezone,
-      JSON.stringify(settings.openingHours),
-      settings.paused,
-      settings.minOrderCents,
-      settings.estimatedMinutes,
-      settings.pickupEnabled,
-      settings.deliveryEnabled,
-      settings.paymentMethods,
-      settings.pixKey,
-      settings.ownerWhatsapp,
-      settings.whatsappNumber,
-      settings.restaurantName,
-      settings.logoUrl,
-      settings.contactEmail,
-      settings.address,
-      settings.latitude,
-      settings.longitude,
-    ],
-  );
-
-  const row = result.rows[0];
-  if (!row) throw new Error("Falha ao salvar as configurações da loja");
-  return toStoreSettings(row);
-}
-
 interface DeliveryZoneRow {
   id: number;
   neighborhood: string;
@@ -153,77 +79,150 @@ function toZone(row: DeliveryZoneRow): DeliveryZone {
   };
 }
 
-export async function listDeliveryZones(
-  tenantId: TenantId,
-): Promise<DeliveryZone[]> {
-  const result = await tenantQuery<DeliveryZoneRow>(
-    tenantId,
-    `SELECT id, neighborhood, fee_cents, active
-       FROM delivery_zones
-      WHERE tenant_id = $1
-      ORDER BY neighborhood ASC`,
-    [tenantId],
-  );
-  return result.rows.map(toZone);
-}
+@Injectable()
+export class StoreRepository {
+  constructor(private readonly db: TenantDb) {}
 
-export async function createDeliveryZone(
-  tenantId: TenantId,
-  input: DeliveryZoneInput,
-): Promise<DeliveryZone> {
-  const result = await tenantQuery<DeliveryZoneRow>(
-    tenantId,
-    `INSERT INTO delivery_zones (tenant_id, neighborhood, neighborhood_key, fee_cents, active)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, neighborhood, fee_cents, active`,
-    [
+  /** `null` quando o tenant ainda não personalizou a loja — o serviço cai nos defaults. */
+  async findStoreSettings(tenantId: TenantId): Promise<StoreSettings | null> {
+    const result = await this.db.query<StoreSettingsRow>(
       tenantId,
-      input.neighborhood,
-      normalizeNeighborhood(input.neighborhood),
-      input.feeCents,
-      input.active,
-    ],
-  );
-  const row = result.rows[0];
-  if (!row) throw new Error("Falha ao criar a zona de entrega");
-  return toZone(row);
-}
+      `SELECT ${STORE_SETTINGS_COLUMNS}
+         FROM store_settings
+        WHERE tenant_id = $1`,
+      [tenantId],
+    );
 
-export async function updateDeliveryZone(
-  tenantId: TenantId,
-  id: number,
-  input: DeliveryZoneInput,
-): Promise<DeliveryZone | null> {
-  const result = await tenantQuery<DeliveryZoneRow>(
-    tenantId,
-    `UPDATE delivery_zones
-        SET neighborhood = $3,
-            neighborhood_key = $4,
-            fee_cents = $5,
-            active = $6
-      WHERE tenant_id = $1 AND id = $2
-      RETURNING id, neighborhood, fee_cents, active`,
-    [
+    const row = result.rows[0];
+    return row ? toStoreSettings(row) : null;
+  }
+
+  async saveStoreSettings(
+    tenantId: TenantId,
+    settings: Omit<StoreSettings, "updatedAt">,
+  ): Promise<StoreSettings> {
+    const result = await this.db.query<StoreSettingsRow>(
       tenantId,
-      id,
-      input.neighborhood,
-      normalizeNeighborhood(input.neighborhood),
-      input.feeCents,
-      input.active,
-    ],
-  );
-  const row = result.rows[0];
-  return row ? toZone(row) : null;
-}
+      `INSERT INTO store_settings (
+          tenant_id, timezone, opening_hours, paused, min_order_cents,
+          estimated_minutes, pickup_enabled, delivery_enabled,
+          payment_methods, pix_key, owner_whatsapp, whatsapp_number, restaurant_name,
+          logo_url, contact_email, address, latitude, longitude, updated_at
+       ) VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $8, $9::text[], $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP)
+       ON CONFLICT (tenant_id) DO UPDATE
+          SET timezone = EXCLUDED.timezone,
+              opening_hours = EXCLUDED.opening_hours,
+              paused = EXCLUDED.paused,
+              min_order_cents = EXCLUDED.min_order_cents,
+              estimated_minutes = EXCLUDED.estimated_minutes,
+              pickup_enabled = EXCLUDED.pickup_enabled,
+              delivery_enabled = EXCLUDED.delivery_enabled,
+              payment_methods = EXCLUDED.payment_methods,
+              pix_key = EXCLUDED.pix_key,
+              owner_whatsapp = EXCLUDED.owner_whatsapp,
+              whatsapp_number = EXCLUDED.whatsapp_number,
+              restaurant_name = EXCLUDED.restaurant_name,
+              logo_url = EXCLUDED.logo_url,
+              contact_email = EXCLUDED.contact_email,
+              address = EXCLUDED.address,
+              latitude = EXCLUDED.latitude,
+              longitude = EXCLUDED.longitude,
+              updated_at = CURRENT_TIMESTAMP
+       RETURNING ${STORE_SETTINGS_COLUMNS}`,
+      [
+        tenantId,
+        settings.timezone,
+        JSON.stringify(settings.openingHours),
+        settings.paused,
+        settings.minOrderCents,
+        settings.estimatedMinutes,
+        settings.pickupEnabled,
+        settings.deliveryEnabled,
+        settings.paymentMethods,
+        settings.pixKey,
+        settings.ownerWhatsapp,
+        settings.whatsappNumber,
+        settings.restaurantName,
+        settings.logoUrl,
+        settings.contactEmail,
+        settings.address,
+        settings.latitude,
+        settings.longitude,
+      ],
+    );
 
-export async function deleteDeliveryZone(
-  tenantId: TenantId,
-  id: number,
-): Promise<boolean> {
-  const result = await tenantQuery(
-    tenantId,
-    `DELETE FROM delivery_zones WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, id],
-  );
-  return (result.rowCount ?? 0) > 0;
+    const row = result.rows[0];
+    if (!row) throw new Error("Falha ao salvar as configurações da loja");
+    return toStoreSettings(row);
+  }
+
+  async listDeliveryZones(tenantId: TenantId): Promise<DeliveryZone[]> {
+    const result = await this.db.query<DeliveryZoneRow>(
+      tenantId,
+      `SELECT id, neighborhood, fee_cents, active
+         FROM delivery_zones
+        WHERE tenant_id = $1
+        ORDER BY neighborhood ASC`,
+      [tenantId],
+    );
+    return result.rows.map(toZone);
+  }
+
+  async createDeliveryZone(
+    tenantId: TenantId,
+    input: DeliveryZoneInput,
+  ): Promise<DeliveryZone> {
+    const result = await this.db.query<DeliveryZoneRow>(
+      tenantId,
+      `INSERT INTO delivery_zones (tenant_id, neighborhood, neighborhood_key, fee_cents, active)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, neighborhood, fee_cents, active`,
+      [
+        tenantId,
+        input.neighborhood,
+        normalizeNeighborhood(input.neighborhood),
+        input.feeCents,
+        input.active,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error("Falha ao criar a zona de entrega");
+    return toZone(row);
+  }
+
+  async updateDeliveryZone(
+    tenantId: TenantId,
+    id: number,
+    input: DeliveryZoneInput,
+  ): Promise<DeliveryZone | null> {
+    const result = await this.db.query<DeliveryZoneRow>(
+      tenantId,
+      `UPDATE delivery_zones
+          SET neighborhood = $3,
+              neighborhood_key = $4,
+              fee_cents = $5,
+              active = $6
+        WHERE tenant_id = $1 AND id = $2
+        RETURNING id, neighborhood, fee_cents, active`,
+      [
+        tenantId,
+        id,
+        input.neighborhood,
+        normalizeNeighborhood(input.neighborhood),
+        input.feeCents,
+        input.active,
+      ],
+    );
+    const row = result.rows[0];
+    return row ? toZone(row) : null;
+  }
+
+  async deleteDeliveryZone(tenantId: TenantId, id: number): Promise<boolean> {
+    const result = await this.db.query(
+      tenantId,
+      `DELETE FROM delivery_zones WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, id],
+    );
+    return (result.rowCount ?? 0) > 0;
+  }
 }

@@ -1,55 +1,49 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/conversation.repository.js", () => ({
+const repo = {
   upsertConversation: vi.fn(),
   insertMessage: vi.fn(),
   findRecentMessages: vi.fn(),
   findConversationTarget: vi.fn(),
-}));
-vi.mock("../../whatsapp/clients/whatsapp.client.js", () => ({
-  sendWhatsAppText: vi.fn(),
-}));
-vi.mock("../../agent/services/agent.service.js", () => ({
-  generateAgentReply: vi.fn(),
-}));
-vi.mock("../../customer/services/customer.service.js", () => ({
-  resolveCustomer: vi.fn(),
-}));
-vi.mock("../../settings/repositories/settings.repository.js", () => ({
-  findBotSettings: vi.fn(),
-  saveBotSettings: vi.fn(),
-}));
-vi.mock("../../tenants/repositories/tenant.repository.js", () => ({
-  findTenantById: vi.fn(),
-}));
-vi.mock("../../store/services/store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-}));
-vi.mock("../../store/services/store.location.js", () => ({
-  setStoreLocation: vi.fn(),
-}));
+};
+const agent = { generateAgentReply: vi.fn() };
+const customerService = { resolveCustomer: vi.fn() };
+const settingsRepo = { findBotSettings: vi.fn(), saveBotSettings: vi.fn() };
+const tenantRepo = { findTenantById: vi.fn() };
+const storeService = { getStoreSettings: vi.fn() };
+const storeLocation = { setStoreLocation: vi.fn() };
 
-const repo = await import("../repositories/conversation.repository.js");
-const agent = await import("../../agent/services/agent.service.js");
-const customerService = await import("../../customer/services/customer.service.js");
-const settingsRepo = await import("../../settings/repositories/settings.repository.js");
-const tenantRepo = await import("../../tenants/repositories/tenant.repository.js");
-const storeService = await import("../../store/services/store.service.js");
-const storeLocation = await import("../../store/services/store.location.js");
-const { invalidateBotSettingsCache, buildPersonaTexts, DEFAULT_BOT_SETTINGS } =
+const { SettingsService } =
   await import("../../settings/services/settings.service.js");
+const { buildPersonaTexts, DEFAULT_BOT_SETTINGS } =
+  await import("../../settings/utils/persona.js");
 const {
-  handleInboundMessage,
-  sendOutbound,
+  ConversationService,
   CONVERSATION_IDLE_MS,
   UNSUPPORTED_MEDIA_REPLY,
   OWNER_LOCATION_SAVED_REPLY,
   OWNER_LOCATION_NO_ADDRESS_REPLY,
   OWNER_LOCATION_FAILED_REPLY,
 } = await import("./conversation.service.js");
-const whatsappClient = await import("../../whatsapp/clients/whatsapp.client.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
-const { InvalidInputError } = await import("../../errors/invalidInput.error.js");
+const { InvalidInputError } =
+  await import("../../errors/invalidInput.error.js");
+
+const settingsService = new SettingsService(settingsRepo as never);
+const invalidateBotSettingsCache =
+  settingsService.invalidateBotSettingsCache.bind(settingsService);
+const conversationService = new ConversationService(
+  repo as never,
+  agent as never,
+  customerService as never,
+  settingsService,
+  storeService as never,
+  storeLocation as never,
+  tenantRepo as never,
+);
+const handleInboundMessage =
+  conversationService.handleInboundMessage.bind(conversationService);
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 
@@ -268,7 +262,7 @@ describe("handleInboundMessage — robustez", () => {
     insertMessage
       .mockResolvedValueOnce(true)
       .mockRejectedValueOnce(new Error("pg"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 
     const result = await handleInboundMessage(TENANT, message("oi"));
 
@@ -364,7 +358,7 @@ describe("handleInboundMessage — robustez", () => {
       freshConversation();
       getStoreSettings.mockResolvedValue({ ownerWhatsapp: "11999999999" });
       setStoreLocation.mockRejectedValue(new Error("pg down"));
-      vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 
       const result = await handleInboundMessage(
         TENANT,
@@ -390,7 +384,7 @@ describe("handleInboundMessage — robustez", () => {
   it("uses default persona when the settings read fails", async () => {
     freshConversation();
     findBotSettings.mockRejectedValue(new Error("pg down"));
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 
     const result = await handleInboundMessage(TENANT, message("oi"));
 
@@ -402,58 +396,5 @@ describe("handleInboundMessage — robustez", () => {
       handleInboundMessage(TENANT, message("   ")),
     ).rejects.toBeInstanceOf(InvalidInputError);
     expect(upsertConversation).not.toHaveBeenCalled();
-  });
-});
-
-describe("sendOutbound", () => {
-  const findConversationTarget = mock(repo.findConversationTarget);
-  const sendWhatsAppText = mock(whatsappClient.sendWhatsAppText);
-
-  it("simulador: grava a mensagem e NÃO chama a Meta", async () => {
-    findConversationTarget.mockResolvedValue({
-      channel: "simulator",
-      contact: "admin-1",
-      whatsappPhoneNumberId: null,
-    });
-    insertMessage.mockResolvedValue(true);
-
-    await expect(sendOutbound(TENANT, 3, "Pedido #1 confirmado")).resolves.toBe(
-      true,
-    );
-
-    expect(insertMessage).toHaveBeenCalledWith(
-      TENANT,
-      3,
-      "outbound",
-      "Pedido #1 confirmado",
-      null,
-    );
-    expect(sendWhatsAppText).not.toHaveBeenCalled();
-  });
-
-  it("whatsapp: grava e envia do número da loja para o contato", async () => {
-    findConversationTarget.mockResolvedValue({
-      channel: "whatsapp",
-      contact: "5511999999999",
-      whatsappPhoneNumberId: "PNID",
-    });
-    insertMessage.mockResolvedValue(true);
-
-    await sendOutbound(TENANT, 3, "Saiu para entrega");
-
-    expect(insertMessage).toHaveBeenCalled();
-    expect(sendWhatsAppText).toHaveBeenCalledWith(
-      "PNID",
-      "5511999999999",
-      "Saiu para entrega",
-    );
-  });
-
-  it("conversa de outro tenant/inexistente: não grava nada", async () => {
-    findConversationTarget.mockResolvedValue(null);
-
-    await expect(sendOutbound(TENANT, 3, "x")).resolves.toBe(false);
-    expect(insertMessage).not.toHaveBeenCalled();
-    expect(sendWhatsAppText).not.toHaveBeenCalled();
   });
 });

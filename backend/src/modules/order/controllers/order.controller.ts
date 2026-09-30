@@ -13,14 +13,9 @@ import {
 import { Auth, Tenant } from "../../../common/decorators/auth.decorators.js";
 import { env } from "../../../config/env.js";
 import { InvalidOrderError } from "../errors/order.errors.js";
-import { subscribeOrders } from "../events/order.events.js";
-import {
-  createSampleOrder,
-  getOrder,
-  listBoard,
-  parseTransitionInput,
-  transitionOrder,
-} from "../services/order.service.js";
+import { OrderEvents } from "../events/order.events.js";
+import { OrderService } from "../services/order.service.js";
+import { parseTransitionInput } from "../utils/order.parse.js";
 
 import type { RequestAuth } from "../../auth/types/auth.types.js";
 import type { TenantId } from "../../tenants/types/tenant.types.js";
@@ -39,9 +34,14 @@ function idParam(raw: string): number {
 
 @Controller("api/orders")
 export class OrderController {
+  constructor(
+    private readonly orders: OrderService,
+    private readonly events: OrderEvents,
+  ) {}
+
   @Get()
   async getOrders(@Tenant() tenantId: TenantId) {
-    const orders = await listBoard(tenantId);
+    const orders = await this.orders.listBoard(tenantId);
     return { orders };
   }
 
@@ -72,7 +72,7 @@ export class OrderController {
     res.flushHeaders();
     res.write(": connected\n\n");
 
-    const unsubscribe = subscribeOrders(tenantId, (event) => {
+    const unsubscribe = this.events.subscribeOrders(tenantId, (event) => {
       res.write(
         `event: ${event.type}\ndata: ${JSON.stringify(event.order)}\n\n`,
       );
@@ -96,13 +96,16 @@ export class OrderController {
   async postDevSample(@Auth() auth: RequestAuth) {
     if (env.nodeEnv === "production") throw new NotFoundException();
 
-    const order = await createSampleOrder(auth.tenantId, auth.userId);
+    const order = await this.orders.createSampleOrder(
+      auth.tenantId,
+      auth.userId,
+    );
     return { order };
   }
 
   @Get(":id")
   async getOrderById(@Tenant() tenantId: TenantId, @Param("id") id: string) {
-    const order = await getOrder(tenantId, idParam(id));
+    const order = await this.orders.getOrder(tenantId, idParam(id));
     return { order };
   }
 
@@ -114,7 +117,7 @@ export class OrderController {
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
-    const order = await transitionOrder(
+    const order = await this.orders.transitionOrder(
       tenantId,
       idParam(id),
       parseTransitionInput(body),

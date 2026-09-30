@@ -3,9 +3,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 async function loadClient(key = "server-key") {
   vi.resetModules();
   vi.stubEnv("GOOGLE_GEOCODING_API_KEY", key);
-  const client = await import("./google.client.js");
+  const { GoogleGeocodingClient } = await import("./google.client.js");
+  const client = new GoogleGeocodingClient();
   const { GeoUnavailableError } = await import("../errors/geo.errors.js");
-  return { ...client, GeoUnavailableError };
+  return {
+    geocodeGoogle: client.geocodeGoogle.bind(client),
+    reverseGeocodeGoogle: client.reverseGeocodeGoogle.bind(client),
+    GeoUnavailableError,
+  };
 }
 
 const json = (body: unknown, status = 200) =>

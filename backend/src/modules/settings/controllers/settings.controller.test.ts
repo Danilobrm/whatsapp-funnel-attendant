@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import request from "supertest";
 import {
   afterAll,
@@ -9,25 +10,17 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../services/settings.service.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../services/settings.service.js")>();
-  return {
-    ...actual,
-    getBotSettings: vi.fn(),
-    updateBotSettings: vi.fn(),
-  };
-});
+const getMock = vi.fn();
+const updateMock = vi.fn();
 
-const service = await import("../services/settings.service.js");
-const { SettingsModule } = await import("../settings.module.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
+const { SettingsController } = await import("./settings.controller.js");
+const { SettingsService } = await import("../services/settings.service.js");
+const { InvalidSettingsError } = await import("../errors/settings.errors.js");
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const TENANT = asTenantId(4);
-
-const getMock = vi.mocked(service.getBotSettings);
-const updateMock = vi.mocked(service.updateBotSettings);
 
 const settings = {
   name: "Nina",
@@ -37,10 +30,18 @@ const settings = {
 };
 
 describe("settings controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(SettingsModule);
+    app = await createControllerTestApp({
+      controllers: [SettingsController],
+      providers: [
+        {
+          provide: SettingsService,
+          useValue: { getBotSettings: getMock, updateBotSettings: updateMock },
+        },
+      ],
+    });
   });
   afterAll(async () => {
     await app.close();
@@ -94,7 +95,7 @@ describe("settings controller", () => {
 
     it("maps a typed rejection to 422 (code + field)", async () => {
       updateMock.mockRejectedValue(
-        new service.InvalidSettingsError("unsupported_language", "languages"),
+        new InvalidSettingsError("unsupported_language", "languages"),
       );
 
       const res = await request(http())
@@ -111,7 +112,9 @@ describe("settings controller", () => {
     });
 
     it("maps an unexpected failure to a safe 500", async () => {
-      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logged = vi
+        .spyOn(Logger.prototype, "error")
+        .mockImplementation(() => {});
       updateMock.mockRejectedValue(new Error("boom"));
 
       const res = await request(http())

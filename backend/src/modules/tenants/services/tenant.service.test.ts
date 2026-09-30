@@ -1,20 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/tenant.repository.js", () => ({
-  findTenantByWhatsAppPhoneNumberId: vi.fn(),
-}));
+import { TenantNotFoundError } from "../errors/tenant.errors.js";
+import { TenantService } from "./tenant.service.js";
 
-const repository = await import("../repositories/tenant.repository.js");
-const {
-  TenantNotFoundError,
-  invalidateTenantCache,
-  resolveTenantByWhatsAppPhoneNumberId: resolve,
-} = await import("./tenant.service.js");
+import type { TenantRepository } from "../repositories/tenant.repository.js";
 
-const find =
-  repository.findTenantByWhatsAppPhoneNumberId as unknown as ReturnType<
-    typeof vi.fn
-  >;
+const find = vi.fn();
+const service = new TenantService({
+  findTenantByWhatsAppPhoneNumberId: find,
+} as unknown as TenantRepository);
+const resolve = (id: string | null | undefined) =>
+  service.resolveTenantByWhatsAppPhoneNumberId(id);
+const invalidateTenantCache = (id?: string) =>
+  service.invalidateTenantCache(id);
 
 const DEMO = { id: 1, slug: "pizzaria-demo", name: "Pizzaria Demo" };
 

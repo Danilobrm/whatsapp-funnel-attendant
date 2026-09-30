@@ -1,15 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-}));
-
-const db = await import("../../../config/db.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
-const { findBotSettings, saveBotSettings } =
-  await import("./settings.repository.js");
+const query = vi.fn();
+const { SettingsRepository } = await import("./settings.repository.js");
+const { TenantDb } = await import("../../../common/database/tenantDb.js");
+const { bound } = await import("../../../test/bind.js");
+const repository = new SettingsRepository(new TenantDb({ query } as never));
+const { findBotSettings, saveBotSettings } = bound(repository, [
+  "findBotSettings",
+  "saveBotSettings",
+]);
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(7);
 
 const ROW = {

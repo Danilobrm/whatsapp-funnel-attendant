@@ -7,7 +7,14 @@ async function loadClient(
   vi.stubEnv("OSM_NOMINATIM_URL", "https://nominatim.test");
   vi.stubEnv("OSM_OVERPASS_URLS", overpassUrls);
   vi.stubEnv("OSM_USER_AGENT", "attendant-test");
-  return import("./osm.client.js");
+  const mod = await import("./osm.client.js");
+  const client = new mod.OsmClient();
+  return {
+    ...mod,
+    searchCitiesOsm: client.searchCitiesOsm.bind(client),
+    fetchCityOsm: client.fetchCityOsm.bind(client),
+    fetchNeighborhoodsOsm: client.fetchNeighborhoodsOsm.bind(client),
+  };
 }
 
 const json = (body: unknown, status = 200) =>

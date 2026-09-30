@@ -1,10 +1,13 @@
+import { Logger } from "@nestjs/common";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 async function loadClient(accessToken: string) {
   vi.resetModules();
   vi.stubEnv("WHATSAPP_ACCESS_TOKEN", accessToken);
   vi.stubEnv("WHATSAPP_GRAPH_API_VERSION", "v23.0");
-  return import("./whatsapp.client.js");
+  const mod = await import("./whatsapp.client.js");
+  const client = new mod.WhatsAppClient();
+  return { ...mod, sendWhatsAppText: client.sendWhatsAppText.bind(client) };
 }
 
 afterEach(() => {
@@ -39,7 +42,7 @@ describe("sendWhatsAppText", () => {
   it("skips sending when the token is not configured", async () => {
     const { sendWhatsAppText } = await loadClient("");
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {});
 
     await expect(sendWhatsAppText("1", "2", "x")).resolves.toEqual({
       sent: false,

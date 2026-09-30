@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-}));
-
-const db = await import("../../../config/db.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
+const query = vi.fn();
+const { StoreRepository } = await import("./store.repository.js");
+const { TenantDb } = await import("../../../common/database/tenantDb.js");
+const { bound } = await import("../../../test/bind.js");
+const repository = new StoreRepository(new TenantDb({ query } as never));
 const {
   findStoreSettings,
   saveStoreSettings,
@@ -13,9 +13,15 @@ const {
   createDeliveryZone,
   updateDeliveryZone,
   deleteDeliveryZone,
-} = await import("./store.repository.js");
+} = bound(repository, [
+  "findStoreSettings",
+  "saveStoreSettings",
+  "listDeliveryZones",
+  "createDeliveryZone",
+  "updateDeliveryZone",
+  "deleteDeliveryZone",
+]);
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(5);
 
 const SETTINGS_ROW = {

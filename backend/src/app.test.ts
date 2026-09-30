@@ -1,6 +1,8 @@
 import { createHmac } from "node:crypto";
 
 import request from "supertest";
+
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
@@ -8,33 +10,52 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
  * outros testes de controller) não pega uma rota montada sem guard: só o
  * roteador montado sabe se ele está lá.
  */
-vi.mock("./config/db.js", () => ({
-  query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
-  pool: { connect: vi.fn(), end: vi.fn() },
-}));
-
-vi.mock("./modules/ai/clients/llm-client.js", () => ({
-  createChatLlm: vi.fn(),
-}));
-
-vi.mock("./modules/whatsapp/services/whatsapp.service.js", () => ({
-  processWebhook: vi.fn(async () => {}),
-}));
-
 const APP_SECRET = "test-app-secret";
 const VERIFY_TOKEN = "test-verify-token";
 vi.stubEnv("WHATSAPP_APP_SECRET", APP_SECRET);
 vi.stubEnv("WHATSAPP_VERIFY_TOKEN", VERIFY_TOKEN);
 
-const { signAuthToken } = await import("./modules/auth/utils/jwt.js");
-const { processWebhook } =
+const { Test } = await import("@nestjs/testing");
+const { AppModule } = await import("./app.module.js");
+const { configureApp } = await import("./bootstrap.js");
+const { PG_POOL } = await import("./common/database/database.js");
+const { MigrationsService } =
+  await import("./common/database/migrations.service.js");
+const { WhatsAppService } =
   await import("./modules/whatsapp/services/whatsapp.service.js");
-const { createApp } = await import("./bootstrap.js");
+const { signAuthToken } = await import("./modules/auth/utils/jwt.js");
 
-// Contrato HTTP de ponta a ponta: passa pelo app COMPLETO (Nest + Express
-// legado), então continua valendo enquanto os módulos migram de um para o outro.
-const nest = await createApp();
-await nest.init();
+/**
+ * O app INTEIRO (todos os módulos, guard e filter globais), com só as bordas
+ * trocadas: o pool do Postgres (nada de banco), as migrações e o processamento
+ * do webhook. O `configureApp` é o mesmo do boot real.
+ */
+const processWebhook = vi.fn(async () => {});
+async function buildApp() {
+  const pool = {
+    query: vi.fn(async () => ({ rows: [], rowCount: 0 })),
+    connect: vi.fn(),
+    end: vi.fn(async () => {}),
+  };
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(PG_POOL)
+    .useValue(pool)
+    .overrideProvider(MigrationsService)
+    .useValue({ onModuleInit: async () => {} })
+    .overrideProvider(WhatsAppService)
+    .useValue({ processWebhook })
+    .compile();
+  const app = moduleRef.createNestApplication<NestExpressApplication>({
+    logger: false,
+    rawBody: true,
+  });
+  configureApp(app);
+  await app.init();
+  return app;
+}
+
+// Contrato HTTP de ponta a ponta: passa pelo app COMPLETO.
+const nest = await buildApp();
 const app = nest.getHttpServer();
 
 afterAll(async () => {
@@ -209,8 +230,7 @@ describe("pedidos", () => {
     const original = env.nodeEnv;
     env.nodeEnv = "production";
     try {
-      const prodNest = await createApp();
-      await prodNest.init();
+      const prodNest = await buildApp();
       const res = await request(prodNest.getHttpServer())
         .post("/api/orders/dev-sample")
         .set("Authorization", `Bearer ${TOKEN}`);

@@ -9,18 +9,11 @@ import {
 } from "@nestjs/common";
 
 import { Auth } from "../../../common/decorators/auth.decorators.js";
-import {
-  deleteConversation,
-  findMessagesByContact,
-} from "../../conversation/repositories/conversation.repository.js";
-import { handleInboundMessage } from "../../conversation/services/conversation.service.js";
+import { ConversationRepository } from "../../conversation/repositories/conversation.repository.js";
+import { ConversationService } from "../../conversation/services/conversation.service.js";
 import { InvalidInputError } from "../../errors/invalidInput.error.js";
-import {
-  createCustomer,
-  getSimulatorCart,
-  listCustomers,
-  simulatorContactFor,
-} from "../services/simulator.service.js";
+import { SimulatorService } from "../services/simulator.service.js";
+import { simulatorContactFor } from "../utils/simulator.contact.js";
 
 import type { RequestAuth } from "../../auth/types/auth.types.js";
 
@@ -46,12 +39,18 @@ function contactOf(
 
 @Controller("api/simulator")
 export class SimulatorController {
+  constructor(
+    private readonly conversations: ConversationRepository,
+    private readonly inbound: ConversationService,
+    private readonly simulator: SimulatorService,
+  ) {}
+
   @Get("conversation")
   async getConversation(
     @Auth() auth: RequestAuth,
     @Query("contactId") contactId: unknown,
   ) {
-    const items = await findMessagesByContact(
+    const items = await this.conversations.findMessagesByContact(
       auth.tenantId,
       "simulator",
       contactOf(auth, contactId),
@@ -66,7 +65,7 @@ export class SimulatorController {
     @Auth() auth: RequestAuth,
     @Query("contactId") contactId: unknown,
   ): Promise<void> {
-    await deleteConversation(
+    await this.conversations.deleteConversation(
       auth.tenantId,
       "simulator",
       contactOf(auth, contactId),
@@ -78,7 +77,7 @@ export class SimulatorController {
     @Auth() auth: RequestAuth,
     @Query("contactId") contactId: unknown,
   ) {
-    const cart = await getSimulatorCart(
+    const cart = await this.simulator.getSimulatorCart(
       auth.tenantId,
       contactOf(auth, contactId),
     );
@@ -108,7 +107,7 @@ export class SimulatorController {
     }
 
     const contact = contactOf(auth, contactId, body);
-    const result = await handleInboundMessage(auth.tenantId, {
+    const result = await this.inbound.handleInboundMessage(auth.tenantId, {
       channel: "simulator",
       contact,
       text,
@@ -119,20 +118,20 @@ export class SimulatorController {
       provider: result.provider,
       debug: {
         toolCalls: result.trace ?? [],
-        cart: await getSimulatorCart(auth.tenantId, contact),
+        cart: await this.simulator.getSimulatorCart(auth.tenantId, contact),
       },
     };
   }
 
   @Get("customers")
   async getCustomers(@Auth() auth: RequestAuth) {
-    const items = await listCustomers(auth.tenantId);
+    const items = await this.simulator.listCustomers(auth.tenantId);
     return { items };
   }
 
   @Post("customers")
   async postCustomer(@Auth() auth: RequestAuth, @Body() body: unknown) {
-    const customer = await createCustomer(auth.tenantId, body);
+    const customer = await this.simulator.createCustomer(auth.tenantId, body);
     return { customer };
   }
 }

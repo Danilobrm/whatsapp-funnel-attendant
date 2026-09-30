@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MENU, ZONES } from "../../order/utils/fixtures.test-util.js";
@@ -11,12 +12,9 @@ let stored: Cart | null;
 /** `stored` é reatribuído dentro dos mocks; ler por aqui evita o narrowing do TS. */
 const current = () => stored as Cart | null;
 
-vi.mock("../../menu/services/menu.service.js", () => ({ getPublishedMenu: vi.fn() }));
-vi.mock("../../store/services/store.service.js", () => ({
-  getStoreSettings: vi.fn(),
-  listZones: vi.fn(),
-}));
-vi.mock("../../order/repositories/cart.repository.js", () => ({
+const menuService = { getPublishedMenu: vi.fn() };
+const storeService = { getStoreSettings: vi.fn(), listZones: vi.fn() };
+const cartRepo = {
   findCart: vi.fn(async () => stored),
   deleteCart: vi.fn(async () => {
     stored = null;
@@ -34,27 +32,28 @@ vi.mock("../../order/repositories/cart.repository.js", () => ({
     }
     return false;
   }),
-}));
-vi.mock("../../order/services/order.service.js", () => ({ createOrder: vi.fn() }));
-vi.mock("../../menulink/services/menuLink.service.js", () => ({
-  createMenuLink: vi.fn(),
-}));
-vi.mock("../../menulink/repositories/menuLink.repository.js", () => ({
-  insertMenuLinkOrdered: vi.fn(),
-}));
-vi.mock("../../customer/repositories/customer.repository.js", () => ({
-  updateCustomerLastAddress: vi.fn(),
-}));
+};
+const orderService = { createOrder: vi.fn() };
+const linkService = { createMenuLink: vi.fn() };
+const linkRepo = { insertMenuLinkOrdered: vi.fn() };
+const customerRepo = { updateCustomerLastAddress: vi.fn() };
 
-const menuService = await import("../../menu/services/menu.service.js");
-const storeService = await import("../../store/services/store.service.js");
-const orderService = await import("../../order/services/order.service.js");
-const linkService = await import("../../menulink/services/menuLink.service.js");
-const linkRepo = await import("../../menulink/repositories/menuLink.repository.js");
-const customerRepo = await import("../../customer/repositories/customer.repository.js");
-const cartRepo = await import("../../order/repositories/cart.repository.js");
-const { executeTool, resolveZone } = await import("./executor.js");
+const { CartService } = await import("../../order/services/cart.service.js");
+const { AgentToolExecutor, resolveZone } = await import("./executor.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
+
+// Serviço de carrinho REAL sobre o repositório em memória: o executor roda de verdade, sem banco.
+const executor = new AgentToolExecutor(
+  menuService as never,
+  linkRepo as never,
+  linkService as never,
+  cartRepo as never,
+  new CartService(cartRepo as never),
+  orderService as never,
+  storeService as never,
+  customerRepo as never,
+);
+const executeTool = executor.executeTool.bind(executor);
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const getPublishedMenu = mock(menuService.getPublishedMenu);
@@ -147,8 +146,8 @@ beforeEach(() => {
   updateCustomerLastAddress.mockResolvedValue(undefined);
   createMenuLink.mockResolvedValue("https://loja.app/c/tok.en.sig");
   insertMenuLinkOrdered.mockResolvedValue(undefined);
-  vi.spyOn(console, "error").mockImplementation(() => {});
-  vi.spyOn(console, "info").mockImplementation(() => {});
+  vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
+  vi.spyOn(Logger.prototype, "log").mockImplementation(() => {});
 });
 
 describe("resolveZone", () => {
@@ -861,7 +860,7 @@ describe("call_human", () => {
     const { result } = await run("call_human", { reason: "cliente irritado" });
 
     expect(result).toMatchObject({ ok: true });
-    expect(console.info).toHaveBeenCalledWith(
+    expect(Logger.prototype.log).toHaveBeenCalledWith(
       expect.stringContaining("cliente irritado"),
     );
   });

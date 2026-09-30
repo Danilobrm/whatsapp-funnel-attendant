@@ -9,24 +9,23 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../services/auth.service.js", () => ({
-  login: vi.fn(),
-  currentUser: vi.fn(),
-}));
+const login = vi.fn();
+const currentUser = vi.fn();
 
-const service = await import("../services/auth.service.js");
+const { AuthController } = await import("./auth.controller.js");
+const { AuthService } = await import("../services/auth.service.js");
 const { UnauthorizedError } = await import("../errors/auth.errors.js");
-const { AuthModule } = await import("../auth.module.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
-
-const login = vi.mocked(service.login);
-const currentUser = vi.mocked(service.currentUser);
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 
 describe("auth controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(AuthModule);
+    app = await createControllerTestApp({
+      controllers: [AuthController],
+      providers: [{ provide: AuthService, useValue: { login, currentUser } }],
+    });
   });
   afterAll(async () => {
     await app.close();

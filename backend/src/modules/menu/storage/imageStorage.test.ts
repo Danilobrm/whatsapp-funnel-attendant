@@ -14,8 +14,11 @@ vi.mock("node:crypto", async (importOriginal) => {
 
 const fsPromises = await import("node:fs/promises");
 const crypto = await import("node:crypto");
-const { saveProductImage, productImagesDir, ALLOWED_IMAGE_MIME_TYPES } =
+const { ProductImageStorage, ALLOWED_IMAGE_MIME_TYPES } =
   await import("./imageStorage.js");
+const storage = new ProductImageStorage();
+const saveProductImage = storage.saveProductImage.bind(storage);
+const productImagesDir = storage.productImagesDir.bind(storage);
 
 const mkdir = fsPromises.mkdir as unknown as ReturnType<typeof vi.fn>;
 const writeFile = fsPromises.writeFile as unknown as ReturnType<typeof vi.fn>;

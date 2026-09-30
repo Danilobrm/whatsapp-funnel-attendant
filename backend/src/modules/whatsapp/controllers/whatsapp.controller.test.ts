@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 
+import { Logger } from "@nestjs/common";
 import request from "supertest";
 import {
   afterAll,
@@ -11,16 +12,12 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../services/whatsapp.service.js", () => ({
-  processWebhook: vi.fn(),
-}));
+const processWebhook = vi.fn();
 
-const service = await import("../services/whatsapp.service.js");
-const { WhatsAppModule } = await import("../whatsapp.module.js");
+const { WhatsAppController } = await import("./whatsapp.controller.js");
+const { WhatsAppService } = await import("../services/whatsapp.service.js");
 const { env } = await import("../../../config/env.js");
-const { createTestApp } = await import("../../../test/nestApp.js");
-
-const processWebhook = vi.mocked(service.processWebhook);
+const { createControllerTestApp } = await import("../../../test/nestApp.js");
 const APP_SECRET = "controller-secret";
 const VERIFY_TOKEN = "controller-verify";
 
@@ -30,13 +27,16 @@ const sign = (payload: string, secret = APP_SECRET) =>
   `sha256=${createHmac("sha256", secret).update(payload).digest("hex")}`;
 
 describe("whatsapp controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
   const original = { ...env.whatsapp };
 
   beforeAll(async () => {
     env.whatsapp.appSecret = APP_SECRET;
     env.whatsapp.verifyToken = VERIFY_TOKEN;
-    app = await createTestApp(WhatsAppModule);
+    app = await createControllerTestApp({
+      controllers: [WhatsAppController],
+      providers: [{ provide: WhatsAppService, useValue: { processWebhook } }],
+    });
   });
   afterAll(async () => {
     Object.assign(env.whatsapp, original);
@@ -135,7 +135,9 @@ describe("whatsapp controller", () => {
     });
 
     it("a processing failure is logged and swallowed, never a 500 nor an unhandled rejection", async () => {
-      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logged = vi
+        .spyOn(Logger.prototype, "error")
+        .mockImplementation(() => {});
       processWebhook.mockRejectedValue(new Error("llm down"));
 
       const res = await post(BODY, sign(BODY));

@@ -1,23 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../clients/osm.client.js", () => ({
+const osm = {
   searchCitiesOsm: vi.fn(),
   fetchCityOsm: vi.fn(),
   fetchNeighborhoodsOsm: vi.fn(),
-}));
-vi.mock("../clients/google.client.js", () => ({
-  geocodeGoogle: vi.fn(),
-}));
-vi.mock("../repositories/geo.repository.js", () => ({
-  findStoreGeo: vi.fn(),
-  saveStoreGeo: vi.fn(),
-}));
+};
+const google = { geocodeGoogle: vi.fn() };
+const repo = { findStoreGeo: vi.fn(), saveStoreGeo: vi.fn() };
 
-const osm = await import("../clients/osm.client.js");
-const google = await import("../clients/google.client.js");
-const repo = await import("../repositories/geo.repository.js");
-const { searchCities, setStoreCity, getStoreGeo, geocodeAddress } =
-  await import("./geo.service.js");
+const { GeoService } = await import("./geo.service.js");
+const service = new GeoService(repo as never, osm as never, google as never);
+const searchCities = service.searchCities.bind(service);
+const setStoreCity = service.setStoreCity.bind(service);
+const getStoreGeo = service.getStoreGeo.bind(service);
+const geocodeAddress = service.geocodeAddress.bind(service);
 const { InvalidMenuError } = await import("../../errors/invalidMenu.error.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 

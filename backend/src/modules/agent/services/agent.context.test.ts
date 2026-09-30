@@ -2,17 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MENU } from "../../order/utils/fixtures.test-util.js";
 
-vi.mock("../../menu/services/menu.service.js", () => ({ getPublishedMenu: vi.fn() }));
-vi.mock("../../store/services/store.service.js", () => ({ getStoreSettings: vi.fn() }));
-vi.mock("../../order/repositories/order.repository.js", () => ({
-  findLastOrderForCustomer: vi.fn(),
-}));
-
-const menuService = await import("../../menu/services/menu.service.js");
-const storeService = await import("../../store/services/store.service.js");
-const orderRepo = await import("../../order/repositories/order.repository.js");
-const { describePastDay, formatStoreNow, loadPromptContext, storeContext } =
+const menuService = { getPublishedMenu: vi.fn() };
+const storeService = { getStoreSettings: vi.fn() };
+const orderRepo = { findLastOrderForCustomer: vi.fn() };
+const { AgentContextService, describePastDay, formatStoreNow, storeContext } =
   await import("./agent.context.js");
+const contextService = new AgentContextService(
+  menuService as never,
+  orderRepo as never,
+  storeService as never,
+);
+const loadPromptContext = contextService.loadPromptContext.bind(contextService);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;

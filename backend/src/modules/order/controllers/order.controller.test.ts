@@ -12,50 +12,53 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../services/order.service.js", () => ({
+const service = {
   createSampleOrder: vi.fn(),
   getOrder: vi.fn(),
   listBoard: vi.fn(),
-  parseTransitionInput: vi.fn((body: unknown) => body),
   transitionOrder: vi.fn(),
-}));
+};
 
+// Barramento REAL (o teste publica eventos nele); só o `off` é espionado.
+const { OrderEvents } = await import("../events/order.events.js");
+const realEvents = new OrderEvents();
 const unsubscribed = vi.fn();
-vi.mock("../events/order.events.js", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../events/order.events.js")>();
-  return {
-    ...actual,
-    subscribeOrders: (
-      ...args: Parameters<typeof actual.subscribeOrders>
-    ): (() => void) => {
-      const off = actual.subscribeOrders(...args);
-      return () => {
-        off();
-        unsubscribed();
-      };
-    },
-  };
-});
+const events = {
+  publishOrderEvent: realEvents.publishOrderEvent.bind(realEvents),
+  subscribeOrders: (...args: Parameters<typeof realEvents.subscribeOrders>) => {
+    const off = realEvents.subscribeOrders(...args);
+    return () => {
+      off();
+      unsubscribed();
+    };
+  },
+};
+const publishOrderEvent = events.publishOrderEvent;
 
-const service = await import("../services/order.service.js");
-const { publishOrderEvent } = await import("../events/order.events.js");
-const { STREAM_HEARTBEAT_MS } = await import("./order.controller.js");
-const { OrderModule } = await import("../order.module.js");
+const { OrderController, STREAM_HEARTBEAT_MS } =
+  await import("./order.controller.js");
+const { OrderService } = await import("../services/order.service.js");
 const { InvalidTransitionError, OrderNotFoundError } =
   await import("../errors/order.errors.js");
 const { env } = await import("../../../config/env.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(1);
 
 describe("order controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(OrderModule);
+    app = await createControllerTestApp({
+      controllers: [OrderController],
+      providers: [
+        { provide: OrderService, useValue: service },
+        { provide: OrderEvents, useValue: events },
+      ],
+    });
   });
   afterAll(async () => {
     await app.close();

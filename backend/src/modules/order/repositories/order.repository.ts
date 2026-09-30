@@ -1,9 +1,6 @@
-import { tenantQuery } from "../../../config/tenantQuery.js";
-import {
-  clientTenantQuery,
-  withTransaction,
-} from "../../../config/transaction.js";
+import { Injectable } from "@nestjs/common";
 
+import { TenantDb } from "../../../common/database/tenantDb.js";
 import type { TenantId } from "../../tenants/types/tenant.types.js";
 import type {
   NewOrderInput,
@@ -56,7 +53,9 @@ const ORDER_COLUMNS = `id, number, conversation_id, customer_name, customer_phon
   created_at, accepted_at, ready_at, completed_at, updated_at`;
 
 function iso(value: Date | string): string;
+
 function iso(value: Date | string | null): string | null;
+
 function iso(value: Date | string | null): string | null {
   if (value === null) return null;
   return value instanceof Date
@@ -103,177 +102,6 @@ function toOrder(row: OrderRow, items: OrderItem[]): Order {
   };
 }
 
-/** Busca os itens de vários pedidos numa query só e remonta os pedidos. */
-async function attachItems(
-  tenantId: TenantId,
-  rows: OrderRow[],
-): Promise<Order[]> {
-  if (rows.length === 0) return [];
-  const result = await tenantQuery<ItemRow>(
-    tenantId,
-    `SELECT order_id, name, size_name, unit_price_cents, quantity, options, notes
-       FROM order_items
-      WHERE tenant_id = $1 AND order_id = ANY($2::int[])
-      ORDER BY order_id, position, id`,
-    [tenantId, rows.map((r) => r.id)],
-  );
-
-  const byOrder = new Map<number, OrderItem[]>();
-  for (const row of result.rows) {
-    const list = byOrder.get(row.order_id) ?? [];
-    list.push(toItem(row));
-    byOrder.set(row.order_id, list);
-  }
-  return rows.map((row) => toOrder(row, byOrder.get(row.id) ?? []));
-}
-
-/**
- * Grava pedido + itens numa transação. O número vem do contador do tenant
- * (upsert atômico), então dois pedidos simultâneos nunca repetem número.
- * `conversationId` de outro tenant vira NULL (o `EXISTS` não casa) em vez de
- * ligar o pedido à conversa alheia.
- */
-export async function insertOrder(
-  tenantId: TenantId,
-  input: NewOrderInput,
-): Promise<Order> {
-  const id = await withTransaction(async (client) => {
-    const counter = await clientTenantQuery<{ last_number: number }>(
-      client,
-      tenantId,
-      `INSERT INTO order_counters (tenant_id, last_number)
-       VALUES ($1, 1)
-       ON CONFLICT (tenant_id) DO UPDATE
-          SET last_number = order_counters.last_number + 1
-       RETURNING last_number`,
-      [tenantId],
-    );
-    const number = counter.rows[0]?.last_number;
-    if (number === undefined) throw new Error("Falha ao numerar o pedido");
-
-    const inserted = await clientTenantQuery<{ id: number }>(
-      client,
-      tenantId,
-      `INSERT INTO orders (
-         tenant_id, number, conversation_id, customer_name, customer_phone,
-         fulfillment, address, neighborhood, payment_method, change_for_cents,
-         subtotal_cents, fee_cents, total_cents, notes, customer_id
-       )
-       VALUES (
-         $1, $2,
-         (SELECT id FROM conversations WHERE id = $3 AND tenant_id = $1),
-         $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-         (SELECT id FROM customers WHERE id = $15 AND tenant_id = $1)
-       )
-       RETURNING id`,
-      [
-        tenantId,
-        number,
-        input.conversationId,
-        input.customerName,
-        input.customerPhone,
-        input.fulfillment,
-        input.address === null ? null : JSON.stringify(input.address),
-        input.neighborhood,
-        input.paymentMethod,
-        input.changeForCents,
-        input.subtotalCents,
-        input.feeCents,
-        input.totalCents,
-        input.notes,
-        input.customerId ?? null,
-      ],
-    );
-    const orderId = inserted.rows[0]?.id;
-    if (orderId === undefined) throw new Error("Falha ao gravar o pedido");
-
-    for (const [position, item] of input.items.entries()) {
-      await clientTenantQuery(
-        client,
-        tenantId,
-        `INSERT INTO order_items (
-           tenant_id, order_id, name, size_name, unit_price_cents, quantity,
-           options, notes, position
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          tenantId,
-          orderId,
-          item.name,
-          item.sizeName,
-          item.unitPriceCents,
-          item.quantity,
-          JSON.stringify(item.options),
-          item.notes,
-          position,
-        ],
-      );
-    }
-    return orderId;
-  });
-
-  const order = await findOrderById(tenantId, id);
-  if (!order) throw new Error("Pedido gravado não encontrado");
-  return order;
-}
-
-export async function findOrderById(
-  tenantId: TenantId,
-  id: number,
-): Promise<Order | null> {
-  const result = await tenantQuery<OrderRow>(
-    tenantId,
-    `SELECT ${ORDER_COLUMNS} FROM orders WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, id],
-  );
-  const [order] = await attachItems(tenantId, result.rows);
-  return order ?? null;
-}
-
-/**
- * Último pedido REAL do cliente (rejeitado/cancelado não conta como "o de
- * sempre"). Alimenta "quer o mesmo de sábado?".
- */
-export async function findLastOrderForCustomer(
-  tenantId: TenantId,
-  customerId: number,
-): Promise<Order | null> {
-  const result = await tenantQuery<OrderRow>(
-    tenantId,
-    `SELECT ${ORDER_COLUMNS}
-       FROM orders
-      WHERE tenant_id = $1 AND customer_id = $2
-        AND status NOT IN ('rejected', 'cancelled')
-      ORDER BY created_at DESC, id DESC
-      LIMIT 1`,
-    [tenantId, customerId],
-  );
-  const [order] = await attachItems(tenantId, result.rows);
-  return order ?? null;
-}
-
-/**
- * O quadro do balcão: todo pedido ainda em andamento (de qualquer dia — um
- * pedido esquecido de ontem precisa aparecer) + os encerrados desde
- * `dayStart` (início do dia no fuso da loja).
- */
-export async function listBoardOrders(
-  tenantId: TenantId,
-  dayStart: Date,
-): Promise<Order[]> {
-  const result = await tenantQuery<OrderRow>(
-    tenantId,
-    `SELECT ${ORDER_COLUMNS}
-       FROM orders
-      WHERE tenant_id = $1
-        AND (status NOT IN ('completed', 'rejected', 'cancelled')
-             OR created_at >= $2)
-      ORDER BY created_at ASC, id ASC`,
-    [tenantId, dayStart.toISOString()],
-  );
-  return attachItems(tenantId, result.rows);
-}
-
 const TIMESTAMP_FOR: Partial<Record<OrderStatus, string>> = {
   accepted: "accepted_at",
   out_for_delivery: "ready_at",
@@ -281,31 +109,195 @@ const TIMESTAMP_FOR: Partial<Record<OrderStatus, string>> = {
   completed: "completed_at",
 };
 
-/**
- * Muda o status só se ele ainda for `from`. Duas abas clicando "aceitar" ao
- * mesmo tempo: a segunda atualiza 0 linhas e recebe `null` — quem chama
- * trata como transição inválida.
- */
-export async function updateOrderStatus(
-  tenantId: TenantId,
-  id: number,
-  from: OrderStatus,
-  to: OrderStatus,
-  reject: { reason: RejectReason | null; note: string | null },
-): Promise<Order | null> {
-  const timestampColumn = TIMESTAMP_FOR[to];
-  const result = await tenantQuery<{ id: number }>(
-    tenantId,
-    `UPDATE orders
-        SET status = $4,
-            reject_reason = $5,
-            reject_note = $6,
-            ${timestampColumn ? `${timestampColumn} = CURRENT_TIMESTAMP,` : ""}
-            updated_at = CURRENT_TIMESTAMP
-      WHERE tenant_id = $1 AND id = $2 AND status = $3
-      RETURNING id`,
-    [tenantId, id, from, to, reject.reason, reject.note],
-  );
-  if ((result.rowCount ?? 0) === 0) return null;
-  return findOrderById(tenantId, id);
+@Injectable()
+export class OrderRepository {
+  constructor(private readonly db: TenantDb) {}
+
+  /** Busca os itens de vários pedidos numa query só e remonta os pedidos. */
+  private async attachItems(
+    tenantId: TenantId,
+    rows: OrderRow[],
+  ): Promise<Order[]> {
+    if (rows.length === 0) return [];
+    const result = await this.db.query<ItemRow>(
+      tenantId,
+      `SELECT order_id, name, size_name, unit_price_cents, quantity, options, notes
+         FROM order_items
+        WHERE tenant_id = $1 AND order_id = ANY($2::int[])
+        ORDER BY order_id, position, id`,
+      [tenantId, rows.map((r) => r.id)],
+    );
+
+    const byOrder = new Map<number, OrderItem[]>();
+    for (const row of result.rows) {
+      const list = byOrder.get(row.order_id) ?? [];
+      list.push(toItem(row));
+      byOrder.set(row.order_id, list);
+    }
+    return rows.map((row) => toOrder(row, byOrder.get(row.id) ?? []));
+  }
+
+  /**
+   * Grava pedido + itens numa transação. O número vem do contador do tenant
+   * (upsert atômico), então dois pedidos simultâneos nunca repetem número.
+   * `conversationId` de outro tenant vira NULL (o `EXISTS` não casa) em vez de
+   * ligar o pedido à conversa alheia.
+   */
+  async insertOrder(tenantId: TenantId, input: NewOrderInput): Promise<Order> {
+    const id = await this.db.withTransaction(async (tx) => {
+      const counter = await tx.query<{ last_number: number }>(
+        tenantId,
+        `INSERT INTO order_counters (tenant_id, last_number)
+         VALUES ($1, 1)
+         ON CONFLICT (tenant_id) DO UPDATE
+            SET last_number = order_counters.last_number + 1
+         RETURNING last_number`,
+        [tenantId],
+      );
+      const number = counter.rows[0]?.last_number;
+      if (number === undefined) throw new Error("Falha ao numerar o pedido");
+
+      const inserted = await tx.query<{ id: number }>(
+        tenantId,
+        `INSERT INTO orders (
+           tenant_id, number, conversation_id, customer_name, customer_phone,
+           fulfillment, address, neighborhood, payment_method, change_for_cents,
+           subtotal_cents, fee_cents, total_cents, notes, customer_id
+         )
+         VALUES (
+           $1, $2,
+           (SELECT id FROM conversations WHERE id = $3 AND tenant_id = $1),
+           $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+           (SELECT id FROM customers WHERE id = $15 AND tenant_id = $1)
+         )
+         RETURNING id`,
+        [
+          tenantId,
+          number,
+          input.conversationId,
+          input.customerName,
+          input.customerPhone,
+          input.fulfillment,
+          input.address === null ? null : JSON.stringify(input.address),
+          input.neighborhood,
+          input.paymentMethod,
+          input.changeForCents,
+          input.subtotalCents,
+          input.feeCents,
+          input.totalCents,
+          input.notes,
+          input.customerId ?? null,
+        ],
+      );
+      const orderId = inserted.rows[0]?.id;
+      if (orderId === undefined) throw new Error("Falha ao gravar o pedido");
+
+      for (const [position, item] of input.items.entries()) {
+        await tx.query(
+          tenantId,
+          `INSERT INTO order_items (
+             tenant_id, order_id, name, size_name, unit_price_cents, quantity,
+             options, notes, position
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            tenantId,
+            orderId,
+            item.name,
+            item.sizeName,
+            item.unitPriceCents,
+            item.quantity,
+            JSON.stringify(item.options),
+            item.notes,
+            position,
+          ],
+        );
+      }
+      return orderId;
+    });
+
+    const order = await this.findOrderById(tenantId, id);
+    if (!order) throw new Error("Pedido gravado não encontrado");
+    return order;
+  }
+
+  async findOrderById(tenantId: TenantId, id: number): Promise<Order | null> {
+    const result = await this.db.query<OrderRow>(
+      tenantId,
+      `SELECT ${ORDER_COLUMNS} FROM orders WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, id],
+    );
+    const [order] = await this.attachItems(tenantId, result.rows);
+    return order ?? null;
+  }
+
+  /**
+   * Último pedido REAL do cliente (rejeitado/cancelado não conta como "o de
+   * sempre"). Alimenta "quer o mesmo de sábado?".
+   */
+  async findLastOrderForCustomer(
+    tenantId: TenantId,
+    customerId: number,
+  ): Promise<Order | null> {
+    const result = await this.db.query<OrderRow>(
+      tenantId,
+      `SELECT ${ORDER_COLUMNS}
+         FROM orders
+        WHERE tenant_id = $1 AND customer_id = $2
+          AND status NOT IN ('rejected', 'cancelled')
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1`,
+      [tenantId, customerId],
+    );
+    const [order] = await this.attachItems(tenantId, result.rows);
+    return order ?? null;
+  }
+
+  /**
+   * O quadro do balcão: todo pedido ainda em andamento (de qualquer dia — um
+   * pedido esquecido de ontem precisa aparecer) + os encerrados desde
+   * `dayStart` (início do dia no fuso da loja).
+   */
+  async listBoardOrders(tenantId: TenantId, dayStart: Date): Promise<Order[]> {
+    const result = await this.db.query<OrderRow>(
+      tenantId,
+      `SELECT ${ORDER_COLUMNS}
+         FROM orders
+        WHERE tenant_id = $1
+          AND (status NOT IN ('completed', 'rejected', 'cancelled')
+               OR created_at >= $2)
+        ORDER BY created_at ASC, id ASC`,
+      [tenantId, dayStart.toISOString()],
+    );
+    return this.attachItems(tenantId, result.rows);
+  }
+
+  /**
+   * Muda o status só se ele ainda for `from`. Duas abas clicando "aceitar" ao
+   * mesmo tempo: a segunda atualiza 0 linhas e recebe `null` — quem chama
+   * trata como transição inválida.
+   */
+  async updateOrderStatus(
+    tenantId: TenantId,
+    id: number,
+    from: OrderStatus,
+    to: OrderStatus,
+    reject: { reason: RejectReason | null; note: string | null },
+  ): Promise<Order | null> {
+    const timestampColumn = TIMESTAMP_FOR[to];
+    const result = await this.db.query<{ id: number }>(
+      tenantId,
+      `UPDATE orders
+          SET status = $4,
+              reject_reason = $5,
+              reject_note = $6,
+              ${timestampColumn ? `${timestampColumn} = CURRENT_TIMESTAMP,` : ""}
+              updated_at = CURRENT_TIMESTAMP
+        WHERE tenant_id = $1 AND id = $2 AND status = $3
+        RETURNING id`,
+      [tenantId, id, from, to, reject.reason, reject.note],
+    );
+    if ((result.rowCount ?? 0) === 0) return null;
+    return this.findOrderById(tenantId, id);
+  }
 }

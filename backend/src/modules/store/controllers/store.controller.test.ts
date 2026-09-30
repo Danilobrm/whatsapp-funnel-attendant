@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import request from "supertest";
 import {
   afterAll,
@@ -9,27 +10,27 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../../geo/services/geo.service.js", () => ({
-  geocodeAddress: vi.fn(),
-  getStoreGeo: vi.fn(),
-  searchCities: vi.fn(),
-  setStoreCity: vi.fn(),
-}));
-
-vi.mock("../services/store.service.js", () => ({
+const service = {
   createZone: vi.fn(),
   getStoreSettings: vi.fn(),
   listZones: vi.fn(),
   removeZone: vi.fn(),
   updateStoreSettings: vi.fn(),
   updateZone: vi.fn(),
-}));
+};
+const geoService = {
+  geocodeAddress: vi.fn(),
+  getStoreGeo: vi.fn(),
+  searchCities: vi.fn(),
+  setStoreCity: vi.fn(),
+};
 
-const service = await import("../services/store.service.js");
-const geoService = await import("../../geo/services/geo.service.js");
-const { StoreModule } = await import("../store.module.js");
+const { StoreController } = await import("./store.controller.js");
+const { StoreService } = await import("../services/store.service.js");
+const { GeoService } = await import("../../geo/services/geo.service.js");
 const { InvalidMenuError } = await import("../../errors/invalidMenu.error.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const TENANT = asTenantId(1);
@@ -37,10 +38,16 @@ const TENANT = asTenantId(1);
 const fn = <T>(f: T) => f as unknown as ReturnType<typeof vi.fn>;
 
 describe("store controller", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(StoreModule);
+    app = await createControllerTestApp({
+      controllers: [StoreController],
+      providers: [
+        { provide: StoreService, useValue: service },
+        { provide: GeoService, useValue: geoService },
+      ],
+    });
   });
   afterAll(async () => {
     await app.close();
@@ -87,7 +94,9 @@ describe("store controller", () => {
     });
 
     it("falha inesperada vira 500 seguro", async () => {
-      const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logged = vi
+        .spyOn(Logger.prototype, "error")
+        .mockImplementation(() => {});
       fn(service.updateStoreSettings).mockRejectedValue(new Error("boom"));
 
       const res = await request(http())

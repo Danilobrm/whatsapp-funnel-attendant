@@ -1,24 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const clientQuery = vi.fn();
-const client = { query: clientQuery, release: vi.fn() };
-
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-  pool: { connect: vi.fn(async () => client) },
-}));
-
-const db = await import("../../../config/db.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
+const clientQuery = vi.fn();
+const query = vi.fn();
+const { OrderRepository } = await import("./order.repository.js");
+const { fakeTenantDb } = await import("../../../test/fakeDb.js");
+const { bound } = await import("../../../test/bind.js");
+const { tenantDb } = fakeTenantDb(query, clientQuery);
+const repository = new OrderRepository(tenantDb);
 const {
   findLastOrderForCustomer,
   findOrderById,
   insertOrder,
   listBoardOrders,
   updateOrderStatus,
-} = await import("./order.repository.js");
+} = bound(repository, [
+  "findLastOrderForCustomer",
+  "findOrderById",
+  "insertOrder",
+  "listBoardOrders",
+  "updateOrderStatus",
+]);
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(4);
 
 const ORDER_ROW = {
@@ -84,9 +87,6 @@ const INPUT = {
 beforeEach(() => {
   vi.resetAllMocks();
   clientQuery.mockReset();
-  (db.pool.connect as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(
-    client,
-  );
 });
 
 /** Toda query tenant-scoped: SQL cita tenant_id e o $1 é o tenant. */

@@ -3,14 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CART_TTL_MS } from "../types/cart.types.js";
 import { readyCart } from "../utils/fixtures.test-util.js";
 
-vi.mock("../repositories/cart.repository.js", () => ({
-  findCart: vi.fn(),
-  saveCart: vi.fn(),
-  deleteCart: vi.fn(),
-}));
-
-const repo = await import("../repositories/cart.repository.js");
-const { getCart, saveEditedCart } = await import("./cart.service.js");
+const repo = { findCart: vi.fn(), saveCart: vi.fn(), deleteCart: vi.fn() };
+const { CartService } = await import("./cart.service.js");
+const cartService = new CartService(repo as never);
+const getCart = cartService.getCart.bind(cartService);
+const saveEditedCart = cartService.saveEditedCart.bind(cartService);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
 const findCart = repo.findCart as unknown as ReturnType<typeof vi.fn>;

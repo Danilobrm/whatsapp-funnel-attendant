@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { NotFoundException, Logger } from "@nestjs/common";
 import multer from "multer";
 import { describe, expect, it, vi } from "vitest";
 
@@ -18,8 +18,8 @@ import {
   InvalidTransitionError,
   OrderNotFoundError,
 } from "../../modules/order/errors/order.errors.js";
-import { InvalidSettingsError } from "../../modules/settings/services/settings.service.js";
-import { TenantNotFoundError } from "../../modules/tenants/services/tenant.service.js";
+import { InvalidSettingsError } from "../../modules/settings/errors/settings.errors.js";
+import { TenantNotFoundError } from "../../modules/tenants/errors/tenant.errors.js";
 import { AllExceptionsFilter } from "./allExceptions.filter.js";
 
 function makeRes(headersSent = false) {
@@ -98,7 +98,9 @@ describe("AllExceptionsFilter", () => {
   });
 
   it("maps an unknown error to 500 without leaking its message, and logs it", () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi
+      .spyOn(Logger.prototype, "error")
+      .mockImplementation(() => {});
 
     const res = runFilter(
       new Error('relation "orders" does not exist at 10.0.0.5:5432'),

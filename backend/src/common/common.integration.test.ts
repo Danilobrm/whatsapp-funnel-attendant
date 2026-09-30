@@ -9,6 +9,7 @@ import {
   Module,
   Post,
   UseGuards,
+  Logger,
 } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import request from "supertest";
@@ -160,7 +161,9 @@ describe("common (Nest nativo, sem o Express legado)", () => {
   });
 
   it("filter: erro desconhecido vira 500 sem vazar host/tabela", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi
+      .spyOn(Logger.prototype, "error")
+      .mockImplementation(() => {});
 
     const res = await request(http())
       .get("/probe/boom")

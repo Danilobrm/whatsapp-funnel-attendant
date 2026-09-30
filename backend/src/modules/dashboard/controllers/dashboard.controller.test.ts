@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import request from "supertest";
 import {
   afterAll,
@@ -9,22 +10,22 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../services/dashboard.service.js", () => ({
-  getDashboard: vi.fn(),
-}));
+const getDashboard = vi.fn();
 
-const service = await import("../services/dashboard.service.js");
-const { DashboardModule } = await import("../dashboard.module.js");
-const { bearer, createTestApp } = await import("../../../test/nestApp.js");
+const { DashboardController } = await import("./dashboard.controller.js");
+const { DashboardService } = await import("../services/dashboard.service.js");
+const { bearer, createControllerTestApp } =
+  await import("../../../test/nestApp.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
-const getDashboard = vi.mocked(service.getDashboard);
-
 describe("GET /api/dashboard", () => {
-  let app: Awaited<ReturnType<typeof createTestApp>>;
+  let app: Awaited<ReturnType<typeof createControllerTestApp>>;
 
   beforeAll(async () => {
-    app = await createTestApp(DashboardModule);
+    app = await createControllerTestApp({
+      controllers: [DashboardController],
+      providers: [{ provide: DashboardService, useValue: { getDashboard } }],
+    });
   });
   afterAll(async () => {
     await app.close();
@@ -53,7 +54,9 @@ describe("GET /api/dashboard", () => {
   });
 
   it("falha do serviço vira 500 seguro pelo filter, não derruba o processo", async () => {
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi
+      .spyOn(Logger.prototype, "error")
+      .mockImplementation(() => {});
     getDashboard.mockRejectedValue(new Error("db down"));
 
     const res = await request(app.getHttpServer())

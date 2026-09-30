@@ -15,19 +15,8 @@ import {
 import { Tenant } from "../../../common/decorators/auth.decorators.js";
 import { InvalidMenuError } from "../../errors/invalidMenu.error.js";
 import { ProductImageUploadInterceptor } from "../interceptors/productImageUpload.interceptor.js";
-import {
-  createCategory,
-  createItem,
-  deleteCategory,
-  deleteItem,
-  getFullMenu,
-  reorderCategories,
-  reorderItems,
-  setItemAvailability,
-  updateCategory,
-  updateItem,
-} from "../services/menu.service.js";
-import { saveProductImage } from "../storage/imageStorage.js";
+import { MenuService } from "../services/menu.service.js";
+import { ProductImageStorage } from "../storage/imageStorage.js";
 
 import type { TenantId } from "../../tenants/types/tenant.types.js";
 import type { Request } from "express";
@@ -51,15 +40,20 @@ function orderedIds(body: unknown): number[] {
 
 @Controller("api/menu")
 export class MenuController {
+  constructor(
+    private readonly menu: MenuService,
+    private readonly images: ProductImageStorage,
+  ) {}
+
   @Get()
   async getMenu(@Tenant() tenantId: TenantId) {
-    const menu = await getFullMenu(tenantId);
+    const menu = await this.menu.getFullMenu(tenantId);
     return { menu };
   }
 
   @Post("categories")
   async postCategory(@Tenant() tenantId: TenantId, @Body() body: unknown) {
-    const category = await createCategory(tenantId, body);
+    const category = await this.menu.createCategory(tenantId, body);
     return { category };
   }
 
@@ -70,7 +64,7 @@ export class MenuController {
     @Tenant() tenantId: TenantId,
     @Body() body: unknown,
   ): Promise<void> {
-    await reorderCategories(tenantId, orderedIds(body));
+    await this.menu.reorderCategories(tenantId, orderedIds(body));
   }
 
   @Put("categories/:id")
@@ -79,7 +73,11 @@ export class MenuController {
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
-    const category = await updateCategory(tenantId, idParam(id), body);
+    const category = await this.menu.updateCategory(
+      tenantId,
+      idParam(id),
+      body,
+    );
     return { category };
   }
 
@@ -89,12 +87,12 @@ export class MenuController {
     @Tenant() tenantId: TenantId,
     @Param("id") id: string,
   ): Promise<void> {
-    await deleteCategory(tenantId, idParam(id));
+    await this.menu.deleteCategory(tenantId, idParam(id));
   }
 
   @Post("items")
   async postItem(@Tenant() tenantId: TenantId, @Body() body: unknown) {
-    const item = await createItem(tenantId, body);
+    const item = await this.menu.createItem(tenantId, body);
     return { item };
   }
 
@@ -104,7 +102,7 @@ export class MenuController {
     @Tenant() tenantId: TenantId,
     @Body() body: unknown,
   ): Promise<void> {
-    await reorderItems(tenantId, orderedIds(body));
+    await this.menu.reorderItems(tenantId, orderedIds(body));
   }
 
   @Put("items/:id")
@@ -113,7 +111,7 @@ export class MenuController {
     @Param("id") id: string,
     @Body() body: unknown,
   ) {
-    const item = await updateItem(tenantId, idParam(id), body);
+    const item = await this.menu.updateItem(tenantId, idParam(id), body);
     return { item };
   }
 
@@ -123,7 +121,7 @@ export class MenuController {
     @Tenant() tenantId: TenantId,
     @Param("id") id: string,
   ): Promise<void> {
-    await deleteItem(tenantId, idParam(id));
+    await this.menu.deleteItem(tenantId, idParam(id));
   }
 
   @HttpCode(204)
@@ -133,7 +131,11 @@ export class MenuController {
     @Param("id") id: string,
     @Body() body: { available?: unknown } | null,
   ): Promise<void> {
-    await setItemAvailability(tenantId, idParam(id), body?.available === true);
+    await this.menu.setItemAvailability(
+      tenantId,
+      idParam(id),
+      body?.available === true,
+    );
   }
 
   /**
@@ -149,6 +151,6 @@ export class MenuController {
       throw new InvalidMenuError("image_required", "image");
     }
 
-    return saveProductImage(req.file.buffer, req.file.mimetype);
+    return this.images.saveProductImage(req.file.buffer, req.file.mimetype);
   }
 }

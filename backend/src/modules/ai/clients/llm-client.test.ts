@@ -36,8 +36,10 @@ vi.mock("@langchain/google-genai", () => ({
 }));
 
 const { env } = await import("../../../config/env.js");
-const { createChatLlm, LlmNotConfiguredError } =
+const { LlmClientFactory, LlmNotConfiguredError } =
   await import("./llm-client.js");
+const factory = new LlmClientFactory();
+const createChatLlm = factory.createChatLlm.bind(factory);
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import multer from "multer";
 import { describe, expect, it, vi } from "vitest";
 
@@ -17,8 +18,8 @@ import {
   InvalidTransitionError,
   OrderNotFoundError,
 } from "../../modules/order/errors/order.errors.js";
-import { InvalidSettingsError } from "../../modules/settings/services/settings.service.js";
-import { TenantNotFoundError } from "../../modules/tenants/services/tenant.service.js";
+import { InvalidSettingsError } from "../../modules/settings/errors/settings.errors.js";
+import { TenantNotFoundError } from "../../modules/tenants/errors/tenant.errors.js";
 import { AllExceptionsFilter } from "../filters/allExceptions.filter.js";
 
 /** Passa pelo adaptador real do Nest, que delega ao `mapError`. */
@@ -57,7 +58,9 @@ describe("error mapping (AllExceptionsFilter → mapError)", () => {
 
   it("maps generic Error to 500 without leaking the driver message", () => {
     const res = makeRes();
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi
+      .spyOn(Logger.prototype, "error")
+      .mockImplementation(() => {});
 
     handle(new Error("connect ECONNREFUSED 10.0.1.7:5432"), res);
 
@@ -128,7 +131,9 @@ describe("error mapping (AllExceptionsFilter → mapError)", () => {
 
   it("does not echo non-Error thrown values", () => {
     const res = makeRes();
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const logged = vi
+      .spyOn(Logger.prototype, "error")
+      .mockImplementation(() => {});
 
     handle("string-thrown" as never, res);
 

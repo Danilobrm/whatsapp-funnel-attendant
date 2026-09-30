@@ -1,20 +1,16 @@
+import { Logger } from "@nestjs/common";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../conversation/services/conversation.service.js", () => ({
-  handleInboundMessage: vi.fn(),
-}));
-vi.mock("../../tenants/services/tenant.service.js", () => ({
-  resolveTenantByWhatsAppPhoneNumberId: vi.fn(),
-}));
-vi.mock("../clients/whatsapp.client.js", () => ({
-  sendWhatsAppText: vi.fn(),
-}));
-
-const conversation =
-  await import("../../conversation/services/conversation.service.js");
-const tenants = await import("../../tenants/services/tenant.service.js");
-const client = await import("../clients/whatsapp.client.js");
-const { processWebhook } = await import("./whatsapp.service.js");
+const conversation = { handleInboundMessage: vi.fn() };
+const tenants = { resolveTenantByWhatsAppPhoneNumberId: vi.fn() };
+const client = { sendWhatsAppText: vi.fn() };
+const { WhatsAppService } = await import("./whatsapp.service.js");
+const whatsapp = new WhatsAppService(
+  conversation as never,
+  tenants as never,
+  client as never,
+);
+const processWebhook = whatsapp.processWebhook.bind(whatsapp);
 
 const mock = <T>(fn: T) => fn as unknown as ReturnType<typeof vi.fn>;
 const handleInboundMessage = mock(conversation.handleInboundMessage);
@@ -127,7 +123,7 @@ describe("processWebhook", () => {
   });
 
   it("isolates failures — one bad message does not block the next", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
     handleInboundMessage
       .mockRejectedValueOnce(new Error("boom"))
       .mockResolvedValueOnce({

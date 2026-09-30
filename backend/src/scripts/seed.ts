@@ -1,9 +1,17 @@
-import { pool } from "../config/db.js";
-import { runMigrations } from "../config/migrate.js";
+import pg from "pg";
+
+import { Database } from "../common/database/database.js";
+import { MigrationsService } from "../common/database/migrations.service.js";
+import { env } from "../config/env.js";
 import { hashPassword } from "../modules/auth/utils/password.js";
 import { normalizeNeighborhood } from "../modules/store/utils/neighborhood.js";
 
 import type { PoolClient } from "pg";
+
+// Script fora do Nest: monta o pool e as migrações à mão, com as mesmas classes do app.
+const pool = new pg.Pool({ connectionString: env.databaseUrl });
+const runMigrations = () =>
+  new MigrationsService(new Database(pool)).onModuleInit();
 
 /**
  * Seed de demonstração: um restaurante, um admin e a persona do atendente.

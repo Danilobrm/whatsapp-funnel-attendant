@@ -1,8 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../../config/db.js", () => ({ query: vi.fn() }));
-
-const db = await import("../../../config/db.js");
+const clientQuery = vi.fn();
+const query = vi.fn();
+const { MenuLinkRepository } = await import("./menuLink.repository.js");
+const { fakeTenantDb } = await import("../../../test/fakeDb.js");
+const { bound } = await import("../../../test/bind.js");
+const { tenantDb, database } = fakeTenantDb(query, clientQuery);
+const repository = new MenuLinkRepository(tenantDb, database);
 const {
   countMenuFunnel,
   deleteStaleMenuLinks,
@@ -11,10 +15,17 @@ const {
   insertMenuLink,
   insertMenuLinkEvent,
   insertMenuLinkOrdered,
-} = await import("./menuLink.repository.js");
+} = bound(repository, [
+  "countMenuFunnel",
+  "deleteStaleMenuLinks",
+  "findActiveMenuLink",
+  "findMenuLinkByCode",
+  "insertMenuLink",
+  "insertMenuLinkEvent",
+  "insertMenuLinkOrdered",
+]);
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(4);
 
 beforeEach(() => {

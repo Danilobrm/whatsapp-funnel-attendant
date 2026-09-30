@@ -1,15 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const clientQuery = vi.fn();
-const client = { query: clientQuery, release: vi.fn() };
-
-vi.mock("../../../config/db.js", () => ({
-  query: vi.fn(),
-  pool: { connect: vi.fn(async () => client) },
-}));
-
-const db = await import("../../../config/db.js");
 const { asTenantId } = await import("../../tenants/types/tenant.types.js");
+const clientQuery = vi.fn();
+const query = vi.fn();
+const { MenuRepository } = await import("./menu.repository.js");
+const { fakeTenantDb } = await import("../../../test/fakeDb.js");
+const { bound } = await import("../../../test/bind.js");
+const { tenantDb } = fakeTenantDb(query, clientQuery);
+const repository = new MenuRepository(tenantDb);
 const {
   listCategories,
   createCategory,
@@ -17,9 +15,15 @@ const {
   deleteCategory,
   deleteItem,
   updateItemAvailability,
-} = await import("./menu.repository.js");
+} = bound(repository, [
+  "listCategories",
+  "createCategory",
+  "updateCategory",
+  "deleteCategory",
+  "deleteItem",
+  "updateItemAvailability",
+]);
 
-const query = db.query as unknown as ReturnType<typeof vi.fn>;
 const TENANT = asTenantId(6);
 
 beforeEach(() => {

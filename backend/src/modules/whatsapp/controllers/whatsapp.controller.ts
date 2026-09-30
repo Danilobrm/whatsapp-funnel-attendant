@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Logger,
   Get,
   HttpCode,
   Post,
@@ -13,7 +14,7 @@ import { Public } from "../../../common/decorators/auth.decorators.js";
 import { env } from "../../../config/env.js";
 import { ForbiddenError } from "../../auth/errors/auth.errors.js";
 import { WebhookSignatureGuard } from "../guards/webhookSignature.guard.js";
-import { processWebhook } from "../services/whatsapp.service.js";
+import { WhatsAppService } from "../services/whatsapp.service.js";
 
 import type { Response } from "express";
 
@@ -24,6 +25,10 @@ import type { Response } from "express";
 @Public()
 @Controller("webhooks/whatsapp")
 export class WhatsAppController {
+  private readonly logger = new Logger(WhatsAppController.name);
+
+  constructor(private readonly whatsapp: WhatsAppService) {}
+
   /**
    * Handshake de registro do webhook no painel da Meta:
    * `GET ?hub.mode=subscribe&hub.verify_token=...&hub.challenge=...` → devolve o
@@ -70,10 +75,9 @@ export class WhatsAppController {
     @Body() body: unknown,
     @Res({ passthrough: true }) res: Response,
   ): string {
-    void processWebhook(body).catch((err: unknown) => {
-      console.error(
-        "[whatsapp] falha inesperada no processamento do webhook:",
-        err instanceof Error ? err.message : String(err),
+    void this.whatsapp.processWebhook(body).catch((err: unknown) => {
+      this.logger.error(
+        `falha inesperada no processamento do webhook: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
 

@@ -1,17 +1,17 @@
+import { Injectable, Logger } from "@nestjs/common";
+
+import { LlmClientFactory } from "../../ai/clients/llm-client.js";
+import { AgentContextService } from "./agent.context.js";
+import { AgentToolExecutor } from "../tools/executor.js";
 import {
   AIMessage,
   HumanMessage,
   SystemMessage,
   ToolMessage,
 } from "@langchain/core/messages";
-
 import { env } from "../../../config/env.js";
-import { createChatLlm } from "../../ai/clients/llm-client.js";
-import { loadPromptContext } from "./agent.context.js";
 import { buildSystemPrompt, historyToTurns } from "../utils/agent.prompt.js";
 import { TOOL_DEFINITIONS } from "../tools/definitions.js";
-import { executeTool } from "../tools/executor.js";
-
 import type { BaseMessage } from "@langchain/core/messages";
 import type { Customer } from "../../customer/types/customer.types.js";
 import type { HistoryMessage } from "../../conversation/types/conversation.types.js";
@@ -52,6 +52,7 @@ export const MAX_TOOL_ITERATIONS = 6;
 
 /** WhatsApp aceita até 4096 caracteres por mensagem de texto. */
 const MAX_REPLY_CHARS = 1500;
+
 const MAX_SYSTEM_REPLY_CHARS = 4000;
 
 function contentToText(content: unknown): string {
@@ -68,119 +69,135 @@ function contentToText(content: unknown): string {
   return "";
 }
 
-/**
- * Gera a resposta do atendente: conversa e, quando o cliente pede, monta o
- * pedido chamando ferramentas (cardápio, carrinho, entrega, pagamento).
- *
- * Nunca lança: LLM fora do ar, timeout, chave ausente, laço de ferramentas ou
- * resposta vazia viram `{ reply: null }` e a conversa cai no fallback da
- * persona. O cliente no WhatsApp não pode ficar sem resposta porque o modelo
- * engasgou.
- *
- * Duas respostas NÃO vêm do modelo, e encerram o turno: o resumo do pedido
- * (`request_confirmation`) e a confirmação do pedido gravado (`place_order`).
- * Valores e itens saem de código, nunca parafraseados.
- */
-export async function generateAgentReply(
-  input: AgentInput,
-): Promise<AgentOutput> {
-  const trace: ToolTrace[] = [];
-  const startedAt = Date.now();
-  const now = new Date();
+@Injectable()
+export class AgentService {
+  private readonly logger = new Logger(AgentService.name);
 
-  try {
-    const promptContext = await loadPromptContext(
-      input.tenantId,
-      input.customer ?? null,
-      input.contactName ?? null,
-      now,
-    );
+  constructor(
+    private readonly llm: LlmClientFactory,
+    private readonly context: AgentContextService,
+    private readonly tools: AgentToolExecutor,
+  ) {}
 
-    const llm = await createChatLlm();
-    if (typeof llm.bindTools !== "function") {
-      throw new Error("modelo sem suporte a ferramentas");
-    }
-    const model = llm.bindTools(TOOL_DEFINITIONS);
+  /**
+   * Gera a resposta do atendente: conversa e, quando o cliente pede, monta o
+   * pedido chamando ferramentas (cardápio, carrinho, entrega, pagamento).
+   *
+   * Nunca lança: LLM fora do ar, timeout, chave ausente, laço de ferramentas ou
+   * resposta vazia viram `{ reply: null }` e a conversa cai no fallback da
+   * persona. O cliente no WhatsApp não pode ficar sem resposta porque o modelo
+   * engasgou.
+   *
+   * Duas respostas NÃO vêm do modelo, e encerram o turno: o resumo do pedido
+   * (`request_confirmation`) e a confirmação do pedido gravado (`place_order`).
+   * Valores e itens saem de código, nunca parafraseados.
+   */
+  async generateAgentReply(input: AgentInput): Promise<AgentOutput> {
+    const trace: ToolTrace[] = [];
+    const startedAt = Date.now();
+    const now = new Date();
 
-    const messages: BaseMessage[] = [
-      new SystemMessage(
-        buildSystemPrompt({
-          businessName: input.businessName,
-          settings: input.settings,
-          ...promptContext,
-        }),
-      ),
-      ...historyToTurns(input.history).map((turn) =>
-        turn.role === "user"
-          ? new HumanMessage(turn.content)
-          : new AIMessage(turn.content),
-      ),
-    ];
+    try {
+      const promptContext = await this.context.loadPromptContext(
+        input.tenantId,
+        input.customer ?? null,
+        input.contactName ?? null,
+        now,
+      );
 
-    const toolContext: ToolContext = {
-      tenantId: input.tenantId,
-      conversationId: input.conversationId,
-      customer: input.customer ?? null,
-      contactName: input.contactName ?? null,
-      now,
-    };
-
-    // +1: a última rodada só pode produzir o texto final, sem ferramenta.
-    for (let round = 0; round <= MAX_TOOL_ITERATIONS; round += 1) {
-      if (Date.now() - startedAt > env.llm.timeoutMs * 2) {
-        console.error("Agente estourou o prazo total, caindo no fallback.");
-        return { reply: null, trace };
+      const llm = await this.llm.createChatLlm();
+      if (typeof llm.bindTools !== "function") {
+        throw new Error("modelo sem suporte a ferramentas");
       }
+      const model = llm.bindTools(TOOL_DEFINITIONS);
 
-      // Prazo por chamada em TODOS os provedores (nem todo SDK tem opção própria).
-      const ai = await model.invoke(messages, { timeout: env.llm.timeoutMs });
-      const calls = ai.tool_calls ?? [];
+      const messages: BaseMessage[] = [
+        new SystemMessage(
+          buildSystemPrompt({
+            businessName: input.businessName,
+            settings: input.settings,
+            ...promptContext,
+          }),
+        ),
+        ...historyToTurns(input.history).map((turn) =>
+          turn.role === "user"
+            ? new HumanMessage(turn.content)
+            : new AIMessage(turn.content),
+        ),
+      ];
 
-      if (calls.length === 0) {
-        const text = contentToText(ai.content).trim();
-        return {
-          reply: text.length === 0 ? null : text.slice(0, MAX_REPLY_CHARS),
-          trace,
-        };
-      }
+      const toolContext: ToolContext = {
+        tenantId: input.tenantId,
+        conversationId: input.conversationId,
+        customer: input.customer ?? null,
+        contactName: input.contactName ?? null,
+        now,
+      };
 
-      if (round === MAX_TOOL_ITERATIONS) {
-        console.error("Agente passou do limite de rodadas de ferramenta.");
-        return { reply: null, trace };
-      }
+      // +1: a última rodada só pode produzir o texto final, sem ferramenta.
+      for (let round = 0; round <= MAX_TOOL_ITERATIONS; round += 1) {
+        if (Date.now() - startedAt > env.llm.timeoutMs * 2) {
+          this.logger.error(
+            "Agente estourou o prazo total, caindo no fallback.",
+          );
+          return { reply: null, trace };
+        }
 
-      messages.push(ai);
-      for (const [index, call] of calls.entries()) {
-        const outcome = await executeTool(toolContext, call.name, call.args);
-        trace.push({
-          name: call.name,
-          args: call.args,
-          result: outcome.result,
-        });
+        // Prazo por chamada em TODOS os provedores (nem todo SDK tem opção própria).
+        const ai = await model.invoke(messages, { timeout: env.llm.timeoutMs });
+        const calls = ai.tool_calls ?? [];
 
-        // O sistema fala por cima do modelo: encerra o turno já.
-        if (outcome.finalReply !== undefined) {
+        if (calls.length === 0) {
+          const text = contentToText(ai.content).trim();
           return {
-            reply: outcome.finalReply.slice(0, MAX_SYSTEM_REPLY_CHARS),
+            reply: text.length === 0 ? null : text.slice(0, MAX_REPLY_CHARS),
             trace,
           };
         }
 
-        messages.push(
-          new ToolMessage({
-            content: JSON.stringify(outcome.result),
-            tool_call_id: call.id ?? `call_${round}_${index}`,
+        if (round === MAX_TOOL_ITERATIONS) {
+          this.logger.error(
+            "Agente passou do limite de rodadas de ferramenta.",
+          );
+          return { reply: null, trace };
+        }
+
+        messages.push(ai);
+        for (const [index, call] of calls.entries()) {
+          const outcome = await this.tools.executeTool(
+            toolContext,
+            call.name,
+            call.args,
+          );
+          trace.push({
             name: call.name,
-          }),
-        );
+            args: call.args,
+            result: outcome.result,
+          });
+
+          // O sistema fala por cima do modelo: encerra o turno já.
+          if (outcome.finalReply !== undefined) {
+            return {
+              reply: outcome.finalReply.slice(0, MAX_SYSTEM_REPLY_CHARS),
+              trace,
+            };
+          }
+
+          messages.push(
+            new ToolMessage({
+              content: JSON.stringify(outcome.result),
+              tool_call_id: call.id ?? `call_${round}_${index}`,
+              name: call.name,
+            }),
+          );
+        }
       }
+      return { reply: null, trace };
+    } catch (err) {
+      this.logger.error(
+        `Agente indisponível, caindo no fallback: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return { reply: null, trace };
     }
-    return { reply: null, trace };
-  } catch (err) {
-    console.error(
-      "Agente indisponível, caindo no fallback:",
-      err instanceof Error ? err.message : String(err),
-    );
-    return { reply: null, trace };
   }
 }

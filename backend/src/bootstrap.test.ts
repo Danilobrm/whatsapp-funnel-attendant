@@ -4,19 +4,14 @@ import { join } from "node:path";
 
 import { Body, Controller, Module, Post } from "@nestjs/common";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const dir = await mkdtemp(join(tmpdir(), "produtos-"));
 await writeFile(join(dir, "foto.png"), "PNGDATA");
 
-vi.mock("./modules/menu/storage/imageStorage.js", async (importOriginal) => ({
-  ...(await importOriginal<
-    typeof import("./modules/menu/storage/imageStorage.js")
-  >()),
-  productImagesDir: () => dir,
-}));
-
 const { createApp } = await import("./bootstrap.js");
+const { ProductImageStorage } =
+  await import("./modules/menu/storage/imageStorage.js");
 const { CommonModule } = await import("./common/common.module.js");
 const { Public } = await import("./common/decorators/auth.decorators.js");
 const { env } = await import("./config/env.js");
@@ -30,7 +25,13 @@ class ProbeController {
   }
 }
 
-@Module({ imports: [CommonModule], controllers: [ProbeController] })
+@Module({
+  imports: [CommonModule],
+  controllers: [ProbeController],
+  providers: [
+    { provide: ProductImageStorage, useValue: { productImagesDir: () => dir } },
+  ],
+})
 class ProbeModule {}
 
 describe("createApp (bootstrap)", () => {

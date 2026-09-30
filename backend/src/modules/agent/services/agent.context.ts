@@ -1,14 +1,15 @@
-import { getPublishedMenu } from "../../menu/services/menu.service.js";
-import { findLastOrderForCustomer } from "../../order/repositories/order.repository.js";
+import { Injectable } from "@nestjs/common";
+
+import { MenuService } from "../../menu/services/menu.service.js";
+import { OrderRepository } from "../../order/repositories/order.repository.js";
+import { StoreService } from "../../store/services/store.service.js";
 import {
   dayNumber,
   describeNextOpening,
   isOpenAt,
   nextOpening,
 } from "../../store/utils/store.hours.js";
-import { getStoreSettings } from "../../store/services/store.service.js";
 import { buildMenuSummary } from "../utils/agent.prompt.js";
-
 import type { Customer } from "../../customer/types/customer.types.js";
 import type { Order } from "../../order/types/order.types.js";
 import type { StoreSettings } from "../../store/types/store.types.js";
@@ -80,51 +81,63 @@ function lastOrderContext(
   };
 }
 
-async function customerContext(
-  tenantId: TenantId,
-  customer: Customer | null,
-  contactName: string | null,
-  now: Date,
-  timezone: string,
-): Promise<CustomerContext | null> {
-  if (customer === null) return null;
-  const last = await findLastOrderForCustomer(tenantId, customer.id);
-  const a = customer.lastAddress;
-  return {
-    name: customer.name ?? contactName,
-    lastAddress: a
-      ? [
-          [a.street, a.number].filter(Boolean).join(", "),
-          a.complement,
-          a.neighborhood,
-        ]
-          .filter(Boolean)
-          .join(" - ")
-      : null,
-    lastOrder: last ? lastOrderContext(last, now, timezone) : null,
-  };
-}
+@Injectable()
+export class AgentContextService {
+  constructor(
+    private readonly menu: MenuService,
+    private readonly orders: OrderRepository,
+    private readonly store: StoreService,
+  ) {}
 
-/** Tudo que o prompt precisa saber da loja, do cardápio e do cliente. */
-export async function loadPromptContext(
-  tenantId: TenantId,
-  customer: Customer | null,
-  contactName: string | null,
-  now: Date,
-): Promise<Pick<AgentContext, "store" | "menuSummary" | "customer">> {
-  const [settings, menu] = await Promise.all([
-    getStoreSettings(tenantId),
-    getPublishedMenu(tenantId),
-  ]);
-  return {
-    store: storeContext(settings, now),
-    menuSummary: buildMenuSummary(menu),
-    customer: await customerContext(
+  private async customerContext(
+    tenantId: TenantId,
+    customer: Customer | null,
+    contactName: string | null,
+    now: Date,
+    timezone: string,
+  ): Promise<CustomerContext | null> {
+    if (customer === null) return null;
+    const last = await this.orders.findLastOrderForCustomer(
       tenantId,
-      customer,
-      contactName,
-      now,
-      settings.timezone,
-    ),
-  };
+      customer.id,
+    );
+    const a = customer.lastAddress;
+    return {
+      name: customer.name ?? contactName,
+      lastAddress: a
+        ? [
+            [a.street, a.number].filter(Boolean).join(", "),
+            a.complement,
+            a.neighborhood,
+          ]
+            .filter(Boolean)
+            .join(" - ")
+        : null,
+      lastOrder: last ? lastOrderContext(last, now, timezone) : null,
+    };
+  }
+
+  /** Tudo que o prompt precisa saber da loja, do cardápio e do cliente. */
+  async loadPromptContext(
+    tenantId: TenantId,
+    customer: Customer | null,
+    contactName: string | null,
+    now: Date,
+  ): Promise<Pick<AgentContext, "store" | "menuSummary" | "customer">> {
+    const [settings, menu] = await Promise.all([
+      this.store.getStoreSettings(tenantId),
+      this.menu.getPublishedMenu(tenantId),
+    ]);
+    return {
+      store: storeContext(settings, now),
+      menuSummary: buildMenuSummary(menu),
+      customer: await this.customerContext(
+        tenantId,
+        customer,
+        contactName,
+        now,
+        settings.timezone,
+      ),
+    };
+  }
 }

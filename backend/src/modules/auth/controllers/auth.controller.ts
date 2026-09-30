@@ -1,18 +1,20 @@
 import { Body, Controller, Get, HttpCode, Post } from "@nestjs/common";
 
 import { Auth, Public } from "../../../common/decorators/auth.decorators.js";
-import { currentUser, login } from "../services/auth.service.js";
+import { AuthService } from "../services/auth.service.js";
 
 import type { RequestAuth } from "../types/auth.types.js";
 
 @Controller("api/auth")
 export class AuthController {
+  constructor(private readonly auth: AuthService) {}
+
   // 200, não o 201 padrão do Nest para POST: login não cria recurso.
   @Public()
   @HttpCode(200)
   @Post("login")
   login(@Body() body: unknown) {
-    return login(body);
+    return this.auth.login(body);
   }
 
   /**
@@ -22,7 +24,7 @@ export class AuthController {
    */
   @Get("me")
   async me(@Auth() auth: RequestAuth) {
-    const user = await currentUser(auth.userId);
+    const user = await this.auth.currentUser(auth.userId);
     return { user };
   }
 }

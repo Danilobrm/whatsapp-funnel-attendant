@@ -1,3 +1,5 @@
+import { Injectable } from "@nestjs/common";
+
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, extname, resolve } from "node:path";
@@ -28,25 +30,29 @@ export interface StoredImage {
   url: string;
 }
 
-/**
- * Grava a imagem em disco com um nome gerado (nunca o nome original do
- * cliente — evita path traversal e colisão) e devolve a URL pública.
- */
-export async function saveProductImage(
-  buffer: Buffer,
-  mimeType: string,
-): Promise<StoredImage> {
-  await mkdir(STORAGE_DIR, { recursive: true });
+@Injectable()
+export class ProductImageStorage {
+  /**
+   * Grava a imagem em disco com um nome gerado (nunca o nome original do
+   * cliente — evita path traversal e colisão) e devolve a URL pública.
+   */
+  async saveProductImage(
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<StoredImage> {
+    await mkdir(STORAGE_DIR, { recursive: true });
 
-  const extension = EXTENSION_BY_MIME_TYPE[mimeType] ?? extname(mimeType) ?? "";
-  const filename = `${randomUUID()}${extension}`;
+    const extension =
+      EXTENSION_BY_MIME_TYPE[mimeType] ?? extname(mimeType) ?? "";
+    const filename = `${randomUUID()}${extension}`;
 
-  await writeFile(resolve(STORAGE_DIR, filename), buffer);
+    await writeFile(resolve(STORAGE_DIR, filename), buffer);
 
-  return { url: `${PUBLIC_PATH_PREFIX}/${filename}` };
-}
+    return { url: `${PUBLIC_PATH_PREFIX}/${filename}` };
+  }
 
-/** Diretório servido estaticamente por `server.ts`. */
-export function productImagesDir(): string {
-  return STORAGE_DIR;
+  /** Diretório servido estaticamente (`useStaticAssets` no bootstrap). */
+  productImagesDir(): string {
+    return STORAGE_DIR;
+  }
 }
