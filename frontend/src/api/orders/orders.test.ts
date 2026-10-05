@@ -4,6 +4,7 @@ import { setUnauthorizedHandler } from '../client/client.ts';
 import { openOrderStream } from './orderStream.ts';
 import {
   createSampleOrder,
+  fetchOrders,
   OrderRejectedError,
   transitionOrder,
 } from './orders.ts';
@@ -38,6 +39,22 @@ function streamResponse(chunks: string[], status = 200) {
 }
 
 describe('orders api', () => {
+  // Regressão: um sed de imports trocou a string '/api/orders' por
+  // '/api/orders/orders.ts'; o backend leu "orders.ts" como id e devolveu 422.
+  it('fetchOrders GETs exactly /api/orders (the board)', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ orders: [] }),
+    });
+
+    await fetchOrders();
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/api\/orders$/);
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init?.method ?? 'GET').toBe('GET');
+  });
+
   it('transitionOrder posts the body to /:id/transition', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

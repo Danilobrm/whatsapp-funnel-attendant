@@ -93,7 +93,7 @@ const toRejected = (payload: unknown) =>
 const onStatus = { 404: toRejected, 409: toRejected, 422: toRejected };
 
 export function fetchOrders(): Promise<{ orders: Order[] }> {
-  return request('/api/orders/orders.ts');
+  return request('/api/orders');
 }
 
 export function fetchOrder(id: number): Promise<{ order: Order }> {
