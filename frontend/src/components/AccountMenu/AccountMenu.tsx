@@ -1,11 +1,12 @@
-import { LogOut, Settings } from 'lucide-react';
+import { LogOut, Moon, Settings, Sun } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { useTheme } from '../../hooks/useTheme/useTheme.ts';
 import { useT } from '../../i18n/index.tsx';
 
-import SettingsDrawer from '../SettingsDrawer';
+import SettingsDrawer from '../SettingsDrawer/SettingsDrawer.tsx';
 
-import type { AuthUser } from '../../api/auth';
+import type { AuthUser } from '../../api/auth/auth.ts';
 
 /** Inicial mostrada no avatar: primeira letra do e-mail, em maiúscula. */
 export function initialOf(email: string): string {
@@ -26,6 +27,9 @@ export default function AccountMenu({
   revalidating = false,
 }: AccountMenuProps) {
   const t = useT();
+  const { theme, toggle } = useTheme();
+  const isLight = theme === 'light';
+  const ThemeIcon = isLight ? Moon : Sun;
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,6 +97,21 @@ export default function AccountMenu({
           >
             <Settings className="h-4 w-4 text-fg-subtle" />
             {t('account.settingsItem')}
+          </button>
+
+          <div className="h-px bg-line" />
+
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              toggle();
+              setOpen(false);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-left text-sm text-fg transition hover:bg-hover"
+          >
+            <ThemeIcon className="h-4 w-4 text-fg-subtle" />
+            {isLight ? t('account.themeDark') : t('account.themeLight')}
           </button>
 
           <div className="h-px bg-line" />

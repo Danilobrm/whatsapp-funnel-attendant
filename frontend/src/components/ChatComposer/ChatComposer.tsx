@@ -5,9 +5,9 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { SendHorizontal } from 'lucide-react';
 
-import { matchCommands, type ChatCommand } from '../../hooks/chatCommands';
+import { matchCommands, type ChatCommand } from '../../hooks/chatCommands/chatCommands.ts';
 import { useT } from '../../i18n/index.tsx';
 
 interface ChatComposerProps {
@@ -165,7 +165,7 @@ export default function ChatComposer({
         e.preventDefault();
         submit();
       }}
-      className="relative flex w-full items-end gap-2 rounded-3xl border border-line bg-surface py-3 pl-5 pr-2 shadow-sm transition focus-within:border-line-strong"
+      className="relative flex w-full items-end gap-2"
     >
       {showCommands && (
         <div
@@ -210,37 +210,47 @@ export default function ChatComposer({
         </div>
       )}
 
-      <textarea
-        ref={textareaRef}
-        rows={1}
-        autoFocus={autoFocus}
-        disabled={disabled}
-        maxLength={maxLength}
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder ?? defaultPlaceholder}
-        className="block max-h-[232px] w-full resize-none self-center overflow-y-auto bg-transparent py-1 text-[15px] leading-relaxed text-fg placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
-      />
+      {/* Campo em pílula + botão redondo separado, como o WhatsApp. */}
+      <div
+        data-testid="composer-field"
+        className="flex min-w-0 flex-1 items-end gap-2 rounded-3xl border border-line bg-surface py-2 pl-4 pr-3 transition focus-within:border-line-strong"
+      >
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          autoFocus={autoFocus}
+          disabled={disabled}
+          maxLength={maxLength}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder ?? defaultPlaceholder}
+          className="block max-h-[232px] w-full resize-none self-center overflow-y-auto bg-transparent py-1 text-[15px] leading-snug text-fg placeholder:text-fg-subtle focus:outline-none disabled:cursor-not-allowed"
+        />
 
-      {showCounter && (
-        <span
-          className={`self-end pb-2 text-[11px] tabular-nums ${
-            remaining <= 0 ? 'text-danger' : 'text-fg-subtle'
-          }`}
-        >
-          {remaining}
-        </span>
-      )}
+        {showCounter && (
+          <span
+            className={`self-end pb-1 text-[11px] tabular-nums ${
+              remaining <= 0 ? 'text-danger' : 'text-fg-subtle'
+            }`}
+          >
+            {remaining}
+          </span>
+        )}
+      </div>
 
       <button
         type="submit"
         disabled={!canSend}
         title={t('common.send')}
         aria-label={t('common.send')}
-        className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-accent text-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:bg-hover disabled:text-fg-subtle"
+        className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-accent text-accent-fg transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <ArrowUp className="h-4 w-4" />
+        <SendHorizontal
+          className="h-5 w-5"
+          strokeWidth={2}
+          aria-hidden="true"
+        />
       </button>
     </form>
   );

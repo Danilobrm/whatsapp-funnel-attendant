@@ -1,7 +1,7 @@
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { CHAT_COMMANDS, buildQuestionCommands } from '../../hooks/chatCommands';
+import { CHAT_COMMANDS, buildQuestionCommands } from '../../hooks/chatCommands/chatCommands.ts';
 import { renderWithProviders, screen } from '../../test/render.tsx';
 
 import ChatComposer from './ChatComposer.tsx';
@@ -107,5 +107,19 @@ describe('ChatComposer — menu de barra', () => {
     await userEvent.type(screen.getByRole('textbox'), '/');
 
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+  });
+
+  it('renders a pill field with a separate round send button (WhatsApp style)', async () => {
+    renderWithProviders(<ChatComposer onSubmit={vi.fn()} />);
+
+    const field = screen.getByTestId('composer-field');
+    const send = screen.getByRole('button', { name: 'Enviar' });
+    expect(field).toContainElement(screen.getByRole('textbox'));
+    expect(field).not.toContainElement(send);
+    expect(send).toHaveClass('rounded-full');
+    expect(send).toBeDisabled();
+
+    await userEvent.type(screen.getByRole('textbox'), 'oi');
+    expect(send).toBeEnabled();
   });
 });

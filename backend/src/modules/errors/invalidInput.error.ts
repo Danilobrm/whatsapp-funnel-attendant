@@ -6,7 +6,13 @@
  * texto pt-BR congelado no serviço — status errado e i18n morto. Aqui o
  * contrato é `code` + `field`; o frontend renderiza `errors.<code>`.
  */
-export type InvalidInputCode = "text_required" | "text_too_long";
+export type InvalidInputCode =
+  | "text_required"
+  | "text_too_long"
+  | "invalid_contact"
+  | "name_required"
+  | "name_too_long"
+  | "phone_invalid";
 
 export class InvalidInputError extends Error {
   readonly code: InvalidInputCode;

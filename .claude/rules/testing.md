@@ -12,9 +12,9 @@ Any change that adds or modifies behaviour MUST come with automated tests. Backe
 | Change type | Backend | Frontend |
 |---|---|---|
 | New pure function (guardrails, formatters, mappers) | unit test — cover happy path + every documented rejection code | unit test — same |
-| New service method | unit test with repository mocked (`vi.mock`) — assert branching + typed errors | n/a |
-| New repository query | integration-style test hitting a disposable pg schema OR a mocked `query()` — assert SQL params and return shape | n/a |
-| New controller / route | supertest against `createServer()` — assert status code, JSON shape, error mapping via `errorHandler` | n/a |
+| New service method | unit test that instantiates the class with fake dependencies — `new XService(repoMock as never, …)`, no `vi.mock` of module paths — assert branching + typed errors. Cache is an instance field: a fresh instance per test is a clean cache | n/a |
+| New repository query | unit test with the REAL `TenantDb` over a fake pool (`fakeTenantDb(query, clientQuery)` in `src/test/fakeDb.ts`) — assert SQL, params, return shape; the tenant backstop runs for real | n/a |
+| New controller / route | supertest against `createControllerTestApp({ controllers: [X], providers: [{ provide: XService, useValue: mock }] })` (`src/test/nestApp.ts`: real guard + filter, services replaced by `useValue` mocks) — assert status code, JSON shape, 401 without token, error mapping through the filter. Whole-app route matrix lives in `src/app.test.ts` (`createApp()`) | n/a |
 | New React component | n/a | render + assert visible text / role, `userEvent` for interactions |
 | New hook | n/a | `renderHook` — assert state transitions |
 | Bug fix | regression test that FAILS on the buggy commit and PASSES after the fix | same |

@@ -5,7 +5,7 @@ import { renderWithProviders, screen } from '../../test/render.tsx';
 
 import AccountMenu, { initialOf } from './AccountMenu.tsx';
 
-import type { AuthUser } from '../../api/auth';
+import type { AuthUser } from '../../api/auth/auth.ts';
 
 const user: AuthUser = {
   id: 1,
@@ -15,6 +15,7 @@ const user: AuthUser = {
 
 beforeEach(() => {
   localStorage.clear();
+  document.documentElement.removeAttribute('data-theme');
 });
 
 describe('AccountMenu — settings drawer', () => {
@@ -31,6 +32,29 @@ describe('AccountMenu — settings drawer', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     expect(
       screen.getByRole('dialog', { name: 'Configurações' }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe('AccountMenu — theme', () => {
+  it('toggles light/dark from the menu and closes it', async () => {
+    renderWithProviders(<AccountMenu user={user} onLogout={vi.fn()} />);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Menu da conta' }),
+    );
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Modo escuro' }),
+    );
+
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Menu da conta' }),
+    );
+    expect(
+      screen.getByRole('menuitem', { name: 'Modo claro' }),
     ).toBeInTheDocument();
   });
 });

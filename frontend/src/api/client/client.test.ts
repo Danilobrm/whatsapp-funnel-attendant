@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AUTH_TOKEN_STORAGE_KEY } from '../authToken';
+import { AUTH_TOKEN_STORAGE_KEY } from '../authToken/authToken.ts';
 import {
   ApiError,
   API_BASE_URL,
@@ -91,6 +91,17 @@ describe('body and content-type', () => {
     await request('/x', { method: 'POST', body: { a: 1 } });
     expect(init().headers['Content-Type']).toBe('application/json');
     expect(init().body).toBe(JSON.stringify({ a: 1 }));
+  });
+
+  it('sends FormData as-is, without Content-Type (o browser escreve o boundary)', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200));
+    const form = new FormData();
+    form.append('image', new Blob(['x']), 'foto.png');
+
+    await request('/x', { method: 'POST', body: form });
+
+    expect(init().headers['Content-Type']).toBeUndefined();
+    expect(init().body).toBe(form);
   });
 });
 

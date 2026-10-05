@@ -3,8 +3,8 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 
-vi.mock('../../api/auth', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/auth')>();
+vi.mock('../../api/auth/auth.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/auth/auth.ts')>();
   return { ...actual, login: vi.fn(), fetchCurrentUser: vi.fn() };
 });
 
@@ -14,8 +14,8 @@ vi.mock('../../api/auth', async (importOriginal) => {
  */
 let onUnauthorized: (() => void) | null = null;
 
-vi.mock('../../api/client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/client')>();
+vi.mock('../../api/client/client.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/client/client.ts')>();
   return {
     ...actual,
     setUnauthorizedHandler: vi.fn((fn: (() => void) | null) => {
@@ -24,11 +24,11 @@ vi.mock('../../api/client', async (importOriginal) => {
   };
 });
 
-const api = await import('../../api/auth');
+const api = await import('../../api/auth/auth.ts');
 const { AuthError } = api;
 const { AUTH_TOKEN_STORAGE_KEY, AUTH_USER_STORAGE_KEY } =
-  await import('../../api/authToken');
-const { setUnauthorizedHandler } = await import('../../api/client');
+  await import('../../api/authToken/authToken.ts');
+const { setUnauthorizedHandler } = await import('../../api/client/client.ts');
 const { AuthProvider, useAuth } = await import('./useAuth.tsx');
 
 const loginMock = api.login as unknown as ReturnType<typeof vi.fn>;

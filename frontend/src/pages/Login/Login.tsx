@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
-import { AuthError } from '../../api/auth';
-import { useAuth } from '../../hooks/useAuth';
+import { AuthError } from '../../api/auth/auth.ts';
+import { useAuth } from '../../hooks/useAuth/useAuth.tsx';
 import { useT } from '../../i18n/index.tsx';
 
 interface LocationState {

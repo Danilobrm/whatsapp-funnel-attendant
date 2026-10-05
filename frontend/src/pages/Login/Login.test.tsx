@@ -1,7 +1,7 @@
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AuthError } from '../../api/auth';
+import { AuthError } from '../../api/auth/auth.ts';
 import Login from './Login.tsx';
 import { renderWithProviders, screen, waitFor } from '../../test/render.tsx';
 

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AuthError, fetchCurrentUser, login } from './auth.ts';
-import { AUTH_TOKEN_STORAGE_KEY } from '../authToken';
-import { setUnauthorizedHandler } from '../client';
+import { AUTH_TOKEN_STORAGE_KEY } from '../authToken/authToken.ts';
+import { setUnauthorizedHandler } from '../client/client.ts';
 
 const fetchMock = vi.fn();
 

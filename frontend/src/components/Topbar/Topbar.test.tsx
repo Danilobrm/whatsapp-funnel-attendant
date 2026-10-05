@@ -108,3 +108,19 @@ describe('Topbar — conta', () => {
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
   });
 });
+
+describe('Topbar hamburger', () => {
+  it('shows the menu button only when onMenuClick is given', async () => {
+    const onMenuClick = vi.fn();
+    const authValue = { user: USER, logout: vi.fn() };
+    const { unmount } = renderWithProviders(
+      <Topbar onMenuClick={onMenuClick} />,
+      { route: '/admin', authValue },
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Abrir menu' }));
+    expect(onMenuClick).toHaveBeenCalled();
+    unmount();
+    renderWithProviders(<Topbar />, { route: '/admin', authValue });
+    expect(screen.queryByRole('button', { name: 'Abrir menu' })).toBeNull();
+  });
+});

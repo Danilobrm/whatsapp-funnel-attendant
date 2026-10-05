@@ -1,6 +1,6 @@
 import { Outlet } from 'react-router-dom';
 
-import Topbar from '../Topbar';
+import Topbar from '../Topbar/Topbar.tsx';
 
 export default function PublicLayout() {
   return (

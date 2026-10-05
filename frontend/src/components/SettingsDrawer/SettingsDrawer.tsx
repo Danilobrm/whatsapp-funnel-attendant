@@ -37,9 +37,9 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         role="dialog"
         aria-modal="true"
         aria-label={t('account.settingsTitle')}
-        className="relative z-10 flex h-full w-full max-w-sm flex-col border-l border-line bg-surface shadow-lg"
+        className="relative z-10 flex h-dvh w-full max-w-sm flex-col border-l border-line bg-surface shadow-lg"
       >
-        <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
+        <header className="flex items-start justify-between gap-4 border-b border-line px-4 py-4 md:px-6 md:py-5">
           <div>
             <h2 className="text-base font-semibold text-fg">
               {t('account.settingsTitle')}
@@ -52,13 +52,13 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
             type="button"
             onClick={onClose}
             aria-label={t('account.close')}
-            className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-fg"
+            className="inline-flex h-10 w-10 flex-none md:h-8 md:w-8 items-center justify-center rounded-lg text-fg-muted transition hover:bg-hover hover:text-fg"
           >
             <X className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="flex-1 overflow-y-auto px-4 py-5 md:px-6 md:py-6">
           <fieldset>
             <legend className="text-sm font-medium text-fg">
               {t('account.language.title')}

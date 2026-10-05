@@ -54,6 +54,15 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2}
       OLLAMA_TIMEOUT_MS: "30000"
+      # Provedor do agente (tool calling): ollama | anthropic | openai | gemini. Para
+      # restaurante real use um modelo hospedado — Ollama local é lento e instável.
+      LLM_PROVIDER: ${LLM_PROVIDER:-ollama}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       # Sem default: `:?` aborta o `up` quando JWT_SECRET não está no ambiente.
       # Um default versionado seria a chave de produção publicada no repo.
@@ -74,6 +83,8 @@ services:
   #     args:
   #       # O Vite embute a variável em BUILD time — `environment` não teria efeito.
   #       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000}
+  #       VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:-}
+  #       VITE_GOOGLE_MAPS_MAP_ID: ${VITE_GOOGLE_MAPS_MAP_ID:-}
   #   container_name: attendant_frontend
   #   depends_on:
   #     - backend

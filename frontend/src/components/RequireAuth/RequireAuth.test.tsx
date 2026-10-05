@@ -3,15 +3,15 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
 import RequireAuth from './RequireAuth.tsx';
-import { AuthProvider } from '../../hooks/useAuth';
+import { AuthProvider } from '../../hooks/useAuth/useAuth.tsx';
 import {
   AUTH_TOKEN_STORAGE_KEY,
   AUTH_USER_STORAGE_KEY,
-} from '../../api/authToken';
+} from '../../api/authToken/authToken.ts';
 
 // O provider revalida a sessão no boot; sem stub isso vira ruído de rede.
-vi.mock('../../api/auth', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../api/auth')>();
+vi.mock('../../api/auth/auth.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../api/auth/auth.ts')>();
   return {
     ...actual,
     fetchCurrentUser: vi.fn(() => new Promise(() => undefined)),

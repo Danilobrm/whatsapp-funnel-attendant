@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 
-import { useAuth } from '../../hooks/useAuth';
+import { useAuth } from '../../hooks/useAuth/useAuth.tsx';
 
 /**
  * Sem estado de carregamento DE PROPÓSITO: `useAuth` hidrata do localStorage de

@@ -1,10 +1,9 @@
 import "dotenv/config";
 import { assertProductionSecrets, env } from "./config/env.js";
-import { runMigrations } from "./config/migrate.js";
-import { createServer } from "./api/server.js";
+import { createApp } from "./bootstrap.js";
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[unhandledRejection] escapou do asyncHandler:", reason);
+  console.error("[unhandledRejection] escapou do tratamento de erro:", reason);
 });
 
 process.on("uncaughtException", (err) => {
@@ -20,15 +19,14 @@ try {
   process.exit(1);
 }
 
+// `init()` roda o `onModuleInit` do `MigrationsService`: se o schema não aplica,
+// o boot cai aqui, antes de abrir a porta.
 try {
-  await runMigrations();
+  const app = await createApp();
+  await app.init();
+  await app.listen(env.port);
+  console.log(`API rodando em http://localhost:${env.port}`);
 } catch (err) {
-  console.error("Falha ao aplicar schema:", err);
+  console.error("Falha ao subir a API:", err);
   process.exit(1);
 }
-
-const app = createServer();
-
-app.listen(env.port, () => {
-  console.log(`API rodando em http://localhost:${env.port}`);
-});
